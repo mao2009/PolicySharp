@@ -1,0 +1,23 @@
+name: Policy integrity
+
+on:
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  trust-boundary:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check protected policy files
+        env:
+          POLICY_APPROVED: ${{ contains(github.event.pull_request.labels.*.name, 'policy-approved') }}
+        run: |
+          chmod +x scripts/check-policy-trust-boundary.sh
+          scripts/check-policy-trust-boundary.sh "origin/${{ github.base_ref }}" HEAD
