@@ -19,3 +19,11 @@ jobs:
         run: dotnet build PolicySharp.sln --configuration Release --no-restore
       - name: Test
         run: dotnet test PolicySharp.sln --configuration Release --no-build
+      - name: Pack analyzer
+        run: dotnet pack src/PolicySharp.Analyzers/PolicySharp.Analyzers.csproj --configuration Release --no-build --output artifacts
+      - name: Inspect package
+        run: |
+          unzip -l artifacts/PolicySharp.Analyzers.*.nupkg | tee package-contents.txt
+          grep -q "analyzers/dotnet/cs/PolicySharp.Analyzers.dll" package-contents.txt
+          grep -q "analyzers/dotnet/cs/PolicySharp.Core.dll" package-contents.txt
+          grep -q "buildTransitive/PolicySharp.Analyzers.props" package-contents.txt
