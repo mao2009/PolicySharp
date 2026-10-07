@@ -1,0 +1,11 @@
+# PolicySharp trust-boundary paths.
+# Glob syntax follows bash case patterns in scripts/check-policy-trust-boundary.sh.
+policysharp.json
+Directory.Build.props
+*.csproj
+schema/policysharp.schema.json
+PublicAPI.Shipped.txt
+PublicAPI.Unshipped.txt
+.github/workflows/policy-integrity.yml
+.policysharp/protected-paths.txt
+scripts/check-policy-trust-boundary.sh
