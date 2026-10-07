@@ -125,6 +125,8 @@ public static class PolicyEvaluator
 
 public static class PolicyPattern
 {
+    private const string RecursiveNamespaceSuffix = ".**";
+
     public static bool MatchesNamespace(string actual, string pattern)
     {
         if (string.IsNullOrWhiteSpace(actual) || string.IsNullOrWhiteSpace(pattern))
@@ -132,11 +134,13 @@ public static class PolicyPattern
             return false;
         }
 
-        var normalized = pattern.EndsWith(".**", StringComparison.Ordinal)
-            ? pattern.Substring(0, pattern.Length - 3)
-            : pattern;
+        if (!pattern.EndsWith(RecursiveNamespaceSuffix, StringComparison.Ordinal))
+        {
+            return string.Equals(actual, pattern, StringComparison.Ordinal);
+        }
 
-        return string.Equals(actual, normalized, StringComparison.Ordinal) ||
-            actual.StartsWith(normalized + ".", StringComparison.Ordinal);
+        var prefix = pattern.Substring(0, pattern.Length - RecursiveNamespaceSuffix.Length);
+        return string.Equals(actual, prefix, StringComparison.Ordinal) ||
+            actual.StartsWith(prefix + ".", StringComparison.Ordinal);
     }
 }
