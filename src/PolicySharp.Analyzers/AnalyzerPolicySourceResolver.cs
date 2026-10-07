@@ -1,3 +1,4 @@
+using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Diagnostics;
 using PolicySharp.Core;
 
@@ -6,16 +7,17 @@ namespace PolicySharp.Analyzers;
 internal static class AnalyzerPolicySourceResolver
 {
     public static PolicySourceResolution Resolve(
-        CompilationStartAnalysisContext context)
+        AnalyzerOptions options,
+        CancellationToken cancellationToken)
     {
-        var sources = context.Options.AdditionalFiles
+        var sources = options.AdditionalFiles
             .Where(file => string.Equals(
                 Path.GetFileName(file.Path),
                 "policysharp.json",
                 StringComparison.OrdinalIgnoreCase))
             .Select(file => new PolicySourceText(
                 file.Path,
-                file.GetText(context.CancellationToken)?.ToString()))
+                file.GetText(cancellationToken)?.ToString()))
             .ToArray();
 
         return PolicySourceResolver.Resolve(sources);
