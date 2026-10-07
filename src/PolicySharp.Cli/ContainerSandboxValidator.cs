@@ -4,9 +4,9 @@ public sealed record SandboxValidationResult(
     PolicyCheckResult PolicyResult,
     ProcessResult BuildResult,
     string? Backend,
-    string Image);
+    string? Image);
 
-public sealed class ContainerSandboxValidator
+public sealed class ContainerSandboxValidator : ISandboxValidator
 {
     public const string DefaultImage = "mcr.microsoft.com/dotnet/sdk:8.0";
 
@@ -20,7 +20,7 @@ public sealed class ContainerSandboxValidator
         string? toolDirectory = null,
         string? image = null)
     {
-        _runner = runner;
+        _runner = runner;\n        _requestedBackend = requestedBackend;
         _toolDirectory =
             toolDirectory ??
             Path.GetDirectoryName(typeof(PatchGate).Assembly.Location) ??
