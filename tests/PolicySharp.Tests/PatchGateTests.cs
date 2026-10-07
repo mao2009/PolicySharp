@@ -79,6 +79,24 @@ public sealed class PatchGateTests
     }
 
     [Fact]
+    public async Task BuildGraphChange_RequiresExternalApproval()
+    {
+        await using var repository = await TestRepository.CreateAsync();
+        var patch = await repository.CreatePatchAsync(
+            "Directory.Build.targets",
+            "<Project><Target Name=\"Injected\" BeforeTargets=\"Build\" /></Project>\n");
+
+        var gate = CreateGate(repository);
+        var report = await gate.ExecuteAsync(
+            new GateRequest(patch, repository.InputPath, PolicyApproved: false));
+
+        Assert.Equal("DENY", report.Decision);
+        Assert.Equal("ProtectedPathChanged", report.Reason);
+        Assert.Contains("Directory.Build.targets", report.AffectedFiles);
+        Assert.True(await repository.IsCleanAsync());
+    }
+
+    [Fact]
     public async Task ExternallyApprovedPolicyChange_CanProceed()
     {
         await using var repository = await TestRepository.CreateAsync();
@@ -183,13 +201,28 @@ public sealed class PatchGateTests
             await File.WriteAllTextAsync(repository.InputPath, "test solution\n");
             await File.WriteAllTextAsync(repository.SourcePath, "before\n");
             await File.WriteAllTextAsync(
+                Path.Combine(root, "Directory.Build.targets"),
+                "<Project />\n");
+            await File.WriteAllTextAsync(
                 repository.PolicyPath,
                 """{"version":1,"mode":"default-deny","scopes":[]}""" + "\n");
             await File.WriteAllTextAsync(
                 Path.Combine(root, ".policysharp", "protected-paths.txt"),
                 """
                 policysharp.json
+                Directory.Build.props
+                Directory.Build.targets
+                Directory.Packages.props
+                NuGet.config
+                global.json
+                *.sln
+                *.slnx
                 *.csproj
+                *.fsproj
+                *.vbproj
+                *.props
+                *.targets
+                .gitmodules
                 src/PolicySharp.Core/**
                 src/PolicySharp.Analyzers/**
                 src/PolicySharp.Cli/**
