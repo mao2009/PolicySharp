@@ -93,7 +93,7 @@ public static class PolicyCheckRunner
 
                 var analyzerOptions = new AnalyzerOptions(additionalFiles);
                 var analyzerDiagnostics = await compilation
-                    .WithAnalyzers(analyzers, analyzerOptions, cancellationToken)
+                    .WithAnalyzers(analyzers, analyzerOptions)
                     .GetAnalyzerDiagnosticsAsync(cancellationToken);
 
                 diagnostics.AddRange(
