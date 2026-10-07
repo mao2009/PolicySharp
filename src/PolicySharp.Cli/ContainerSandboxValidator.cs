@@ -18,7 +18,7 @@ public sealed class ContainerSandboxValidator : ISandboxValidator
     public ContainerSandboxValidator(
         IProcessRunner runner,
         string? toolDirectory = null,
-        string? image = null)
+        string? image = null,\n        string? requestedBackend = null)
     {
         _runner = runner;\n        _requestedBackend = requestedBackend;
         _toolDirectory =
