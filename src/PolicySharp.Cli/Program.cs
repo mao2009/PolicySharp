@@ -30,7 +30,7 @@ internal static class Program
              string.Equals(args[4], "--sandbox", StringComparison.OrdinalIgnoreCase)))
         {
             var sandboxBackend = args.Length == 6 ? args[5] : "host";
-            if (sandboxBackend is not ("host" or "docker" or "podman"))
+            if (!new[] { "host", "docker", "podman" }.Contains(\n                    sandboxBackend,\n                    StringComparer.OrdinalIgnoreCase))
             {
                 Console.Error.WriteLine("Sandbox backend must be one of: host, docker, podman.");
                 return UsageErrorExitCode;
