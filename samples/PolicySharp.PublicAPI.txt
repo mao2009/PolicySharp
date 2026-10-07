@@ -1,0 +1,9 @@
+# PolicySharp public API baseline.
+# Generated/updated only through an explicit approval workflow.
+#
+# Format:
+# <SymbolKind> <stable Roslyn display name>
+#
+# Example entries:
+NamedType Sample.Api.Greeter
+Method string Sample.Api.Greeter.Greet(string)
