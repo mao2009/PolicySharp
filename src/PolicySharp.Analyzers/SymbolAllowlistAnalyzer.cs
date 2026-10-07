@@ -30,33 +30,14 @@ public sealed class SymbolAllowlistAnalyzer : DiagnosticAnalyzer
 
         context.RegisterCompilationStartAction(startContext =>
         {
-            var policyFile = startContext.Options.AdditionalFiles
-                .FirstOrDefault(file => string.Equals(
-                    Path.GetFileName(file.Path),
-                    "policysharp.json",
-                    StringComparison.OrdinalIgnoreCase));
-
-            if (policyFile is null)
-            {
-                return;
-            }
-
-            PolicyDocument policy;
-            try
-            {
-                var text = policyFile.GetText(startContext.CancellationToken)?.ToString();
-                if (string.IsNullOrWhiteSpace(text))
-                {
-                    return;
-                }
-
-                policy = PolicyDocument.Parse(text!);
-            }
-            catch
+            var resolution = AnalyzerPolicySourceResolver.Resolve(startContext.Options, startContext.CancellationToken);
+            if (!resolution.IsSuccess || resolution.Document is null)
             {
                 // PolicySharpAnalyzer owns policy configuration diagnostics.
                 return;
             }
+
+            var policy = resolution.Document;
 
             startContext.RegisterOperationAction(
                 operationContext => AnalyzeOperation(operationContext, policy),

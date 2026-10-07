@@ -7,6 +7,7 @@ Rule ID | Category | Severity | Notes
 --------|----------|----------|------
 PSHARP0001 | Configuration | Error | Invalid policy file
 PSHARP0002 | Configuration | Error | Missing policy file
+PSHARP0003 | Configuration | Error | Ambiguous policy sources
 PSHARP2001 | Architecture | Error | Dependency not explicitly allowed
 PSHARP2002 | Architecture | Error | Source namespace not covered by a scope
 

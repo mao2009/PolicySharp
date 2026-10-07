@@ -117,36 +117,26 @@ public static class PolicyCheckRunner
                         .Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
                         .Select(diagnostic => ConvertDiagnostic(project.Name, diagnostic)));
 
-                var policyFiles = additionalFiles
-                    .Where(file => string.Equals(
-                        Path.GetFileName(file.Path),
-                        "policysharp.json",
-                        StringComparison.OrdinalIgnoreCase))
-                    .ToArray();
+                var policyResolution = PolicySourceResolver.Resolve(
+                    additionalFiles
+                        .Where(file => string.Equals(
+                            Path.GetFileName(file.Path),
+                            "policysharp.json",
+                            StringComparison.OrdinalIgnoreCase))
+                        .Select(file => new PolicySourceText(
+                            file.Path,
+                            file.GetText(cancellationToken)?.ToString())));
 
-                if (policyFiles.Length == 1 && project.FilePath is not null)
+                if (policyResolution.IsSuccess &&
+                    policyResolution.Document is not null &&
+                    project.FilePath is not null)
                 {
-                    var policyText = policyFiles[0]
-                        .GetText(cancellationToken)?
-                        .ToString();
-
-                    if (!string.IsNullOrWhiteSpace(policyText))
-                    {
-                        try
-                        {
-                            var policy = PolicyDocument.Parse(policyText!);
-                            diagnostics.AddRange(
-                                DependencyPolicyChecker.CheckProjectFile(
-                                    policy,
-                                    project.Name,
-                                    project.FilePath,
-                                    Path.GetDirectoryName(inputPath) ?? Environment.CurrentDirectory));
-                        }
-                        catch
-                        {
-                            // Roslyn policy diagnostics own malformed policy reporting.
-                        }
-                    }
+                    diagnostics.AddRange(
+                        DependencyPolicyChecker.CheckProjectFile(
+                            policyResolution.Document,
+                            project.Name,
+                            project.FilePath,
+                            Path.GetDirectoryName(inputPath) ?? Environment.CurrentDirectory));
                 }
             }
 
@@ -351,6 +341,7 @@ public static class PolicyCheckRunner
         var isConfiguration =
             diagnostic.Id == PolicySharpAnalyzer.InvalidPolicyDiagnosticId ||
             diagnostic.Id == PolicySharpAnalyzer.MissingPolicyDiagnosticId ||
+            diagnostic.Id == PolicySharpAnalyzer.AmbiguousPolicyDiagnosticId ||
             diagnostic.Id.StartsWith("PSHARPCLI", StringComparison.Ordinal);
 
         return new PolicyCheckDiagnostic(
