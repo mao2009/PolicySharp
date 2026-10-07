@@ -18,9 +18,9 @@ public sealed class PolicySharpAnalyzerIntegrationTests
 
         public sealed class Worker
         {
-            public void Run(System.Net.Http.HttpClient client)
+            public void Run()
             {
-                _ = client.GetAsync("https://example.test");
+                _ = System.Net.Http.HttpMethod.Get;
             }
         }
         """;
