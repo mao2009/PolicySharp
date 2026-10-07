@@ -6,6 +6,7 @@ using Microsoft.CodeAnalysis.Diagnostics;
 using Microsoft.CodeAnalysis.MSBuild;
 using Microsoft.CodeAnalysis.Text;
 using PolicySharp.Analyzers;
+using PolicySharp.Core;
 
 namespace PolicySharp.Cli;
 
@@ -115,6 +116,38 @@ public static class PolicyCheckRunner
                     analyzerDiagnostics
                         .Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
                         .Select(diagnostic => ConvertDiagnostic(project.Name, diagnostic)));
+
+                var policyFiles = additionalFiles
+                    .Where(file => string.Equals(
+                        Path.GetFileName(file.Path),
+                        "policysharp.json",
+                        StringComparison.OrdinalIgnoreCase))
+                    .ToArray();
+
+                if (policyFiles.Length == 1 && project.FilePath is not null)
+                {
+                    var policyText = policyFiles[0]
+                        .GetText(cancellationToken)?
+                        .ToString();
+
+                    if (!string.IsNullOrWhiteSpace(policyText))
+                    {
+                        try
+                        {
+                            var policy = PolicyDocument.Parse(policyText!);
+                            diagnostics.AddRange(
+                                DependencyPolicyChecker.CheckProjectFile(
+                                    policy,
+                                    project.Name,
+                                    project.FilePath,
+                                    Path.GetDirectoryName(inputPath) ?? Environment.CurrentDirectory));
+                        }
+                        catch
+                        {
+                            // Roslyn policy diagnostics own malformed policy reporting.
+                        }
+                    }
+                }
             }
 
             foreach (var failure in workspaceFailures)
