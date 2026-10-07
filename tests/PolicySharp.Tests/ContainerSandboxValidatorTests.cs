@@ -110,6 +110,44 @@ public sealed class ContainerSandboxValidatorTests
         }
     }
 
+    [Fact]
+    public async Task ExplicitUnavailableBackend_DoesNotFallBackToAnotherContainerBackend()
+    {
+        var root = Path.Combine(
+            Path.GetTempPath(),
+            $"policysharp-sandbox-test-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(root);
+        var input = Path.Combine(root, "App.csproj");
+        await File.WriteAllTextAsync(input, "<Project />");
+
+        try
+        {
+            var runner = new RecordingRunner(root);
+            var validator = new ContainerSandboxValidator(
+                runner,
+                toolDirectory: root,
+                image: "policysharp-test-sdk",
+                requestedBackend: "podman");
+
+            var result = await validator.ValidateAsync(input);
+
+            Assert.Null(result.Backend);
+            Assert.True(result.PolicyResult.HasConfigurationErrors);
+            Assert.Contains(
+                runner.Calls,
+                call => call.FileName == "podman" &&
+                        call.Arguments.SequenceEqual(new[] { "info" }));
+            Assert.DoesNotContain(
+                runner.Calls,
+                call => call.FileName == "docker" &&
+                        call.Arguments.SequenceEqual(new[] { "info" }));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     private sealed class RecordingRunner : IProcessRunner
     {
         private readonly string _root;
