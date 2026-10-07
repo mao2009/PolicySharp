@@ -23,11 +23,11 @@ jobs:
         run: dotnet pack src/PolicySharp.Analyzers/PolicySharp.Analyzers.csproj --configuration Release --no-build --output artifacts
       - name: Inspect package
         run: |
-          unzip -l artifacts/PolicySharp.Analyzers.*.nupkg | tee package-contents.txt
+          unzip -l artifacts/loach.PolicySharp.Analyzers.*.nupkg | tee package-contents.txt
           grep -q "analyzers/dotnet/cs/PolicySharp.Analyzers.dll" package-contents.txt
           grep -q "analyzers/dotnet/cs/PolicySharp.Core.dll" package-contents.txt
-          grep -q "buildTransitive/PolicySharp.Analyzers.props" package-contents.txt
+          grep -q "buildTransitive/loach.PolicySharp.Analyzers.props" package-contents.txt
       - name: Pack CLI tool
         run: dotnet pack src/PolicySharp.Cli/PolicySharp.Cli.csproj --configuration Release --no-build --output artifacts
       - name: Verify CLI tool package
-        run: test -f artifacts/PolicySharp.Tool.*.nupkg
+        run: test -f artifacts/loach.PolicySharp.Tool.*.nupkg
