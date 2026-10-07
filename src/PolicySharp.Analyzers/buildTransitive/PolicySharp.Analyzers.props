@@ -1,0 +1,5 @@
+<Project>
+  <ItemGroup Condition="Exists('$(MSBuildProjectDirectory)/policysharp.json')">
+    <AdditionalFiles Include="$(MSBuildProjectDirectory)/policysharp.json" />
+  </ItemGroup>
+</Project>
