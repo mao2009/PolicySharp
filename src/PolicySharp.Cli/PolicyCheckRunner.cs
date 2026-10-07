@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Collections.Immutable;
 using Microsoft.Build.Locator;
 using Microsoft.CodeAnalysis;
@@ -140,6 +141,63 @@ public static class PolicyCheckRunner
                 "PSHARPCLI0004",
                 $"{exception.GetType().Name}: {exception.Message}");
         }
+    }
+
+    public static string SerializeJson(PolicyCheckResult result)
+    {
+        return JsonSerializer.Serialize(
+            new
+            {
+                exitCode = result.ExitCode,
+                diagnostics = result.Diagnostics,
+                evaluatedProjects = result.EvaluatedProjects
+            },
+            new JsonSerializerOptions
+            {
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+            });
+    }
+
+    public static PolicyCheckResult DeserializeJson(string json)
+    {
+        using var document = JsonDocument.Parse(json);
+        var root = document.RootElement;
+
+        var diagnostics = new List<PolicyCheckDiagnostic>();
+        if (root.TryGetProperty("diagnostics", out var diagnosticsElement))
+        {
+            foreach (var item in diagnosticsElement.EnumerateArray())
+            {
+                var properties = new Dictionary<string, string?>(StringComparer.Ordinal);
+                if (item.TryGetProperty("properties", out var propertiesElement))
+                {
+                    foreach (var property in propertiesElement.EnumerateObject())
+                    {
+                        properties[property.Name] =
+                            property.Value.ValueKind == JsonValueKind.Null
+                                ? null
+                                : property.Value.GetString();
+                    }
+                }
+
+                diagnostics.Add(new PolicyCheckDiagnostic(
+                    item.GetProperty("project").GetString() ?? string.Empty,
+                    item.GetProperty("id").GetString() ?? string.Empty,
+                    item.GetProperty("message").GetString() ?? string.Empty,
+                    item.GetProperty("location").GetString() ?? "<none>",
+                    item.GetProperty("isConfiguration").GetBoolean(),
+                    properties));
+            }
+        }
+
+        var projects = root.TryGetProperty("evaluatedProjects", out var projectsElement)
+            ? projectsElement
+                .EnumerateArray()
+                .Select(item => item.GetString() ?? string.Empty)
+                .ToArray()
+            : Array.Empty<string>();
+
+        return new PolicyCheckResult(diagnostics, projects);
     }
 
     public static void WriteDiagnostics(PolicyCheckResult result, TextWriter writer)
