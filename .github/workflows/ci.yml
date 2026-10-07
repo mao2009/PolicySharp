@@ -27,3 +27,7 @@ jobs:
           grep -q "analyzers/dotnet/cs/PolicySharp.Analyzers.dll" package-contents.txt
           grep -q "analyzers/dotnet/cs/PolicySharp.Core.dll" package-contents.txt
           grep -q "buildTransitive/PolicySharp.Analyzers.props" package-contents.txt
+      - name: Pack CLI tool
+        run: dotnet pack src/PolicySharp.Cli/PolicySharp.Cli.csproj --configuration Release --no-build --output artifacts
+      - name: Verify CLI tool package
+        run: test -f artifacts/PolicySharp.Tool.*.nupkg
