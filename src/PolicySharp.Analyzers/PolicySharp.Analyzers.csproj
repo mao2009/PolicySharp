@@ -22,6 +22,7 @@
     <AdditionalFiles Include="AnalyzerReleases.Unshipped.md" />
 
     <None Include="../../README.md" Pack="true" PackagePath="/" />
+    <None Include="../../LICENSE" Pack="true" PackagePath="/" />
     <None Include="buildTransitive/PolicySharp.Analyzers.props"
           Pack="true"
           PackagePath="buildTransitive/loach.PolicySharp.Analyzers.props" />

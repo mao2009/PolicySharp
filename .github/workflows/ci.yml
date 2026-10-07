@@ -27,7 +27,19 @@ jobs:
           grep -q "analyzers/dotnet/cs/PolicySharp.Analyzers.dll" package-contents.txt
           grep -q "analyzers/dotnet/cs/PolicySharp.Core.dll" package-contents.txt
           grep -q "buildTransitive/loach.PolicySharp.Analyzers.props" package-contents.txt
+          grep -q "README.md" package-contents.txt
+          grep -q "LICENSE" package-contents.txt
+      - name: Pack core
+        run: dotnet pack src/PolicySharp.Core/PolicySharp.Core.csproj --configuration Release --no-build --output artifacts
+      - name: Verify core package metadata files
+        run: |
+          unzip -l artifacts/loach.PolicySharp.Core.*.nupkg | tee core-package-contents.txt
+          grep -q "README.md" core-package-contents.txt
+          grep -q "LICENSE" core-package-contents.txt
       - name: Pack CLI tool
         run: dotnet pack src/PolicySharp.Cli/PolicySharp.Cli.csproj --configuration Release --no-build --output artifacts
       - name: Verify CLI tool package
-        run: test -f artifacts/loach.PolicySharp.Tool.*.nupkg
+        run: |
+          unzip -l artifacts/loach.PolicySharp.Tool.*.nupkg | tee tool-package-contents.txt
+          grep -q "README.md" tool-package-contents.txt
+          grep -q "LICENSE" tool-package-contents.txt
