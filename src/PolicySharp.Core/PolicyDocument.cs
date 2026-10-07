@@ -14,6 +14,9 @@ public sealed class PolicyDocument
     [JsonPropertyName("scopes")]
     public IReadOnlyList<PolicyScope> Scopes { get; set; } = Array.Empty<PolicyScope>();
 
+    [JsonPropertyName("dependencies")]
+    public PolicyDependencyPolicy Dependencies { get; set; } = new();
+
     public static PolicyDocument Parse(string json)
     {
         if (string.IsNullOrWhiteSpace(json))
@@ -44,6 +47,10 @@ public sealed class PolicyDocument
         {
             throw new JsonException("Property 'scopes' is required.");
         }
+
+        Dependencies ??= new PolicyDependencyPolicy();
+        Dependencies.Allow ??= new PolicyDependencyAccess();
+        Dependencies.Deny ??= new PolicyDependencyAccess();
 
         var ids = new HashSet<string>(StringComparer.Ordinal);
         for (var index = 0; index < Scopes.Count; index++)
@@ -110,4 +117,23 @@ public sealed class PolicyAccess
 
     [JsonPropertyName("symbols")]
     public IReadOnlyList<string> Symbols { get; set; } = Array.Empty<string>();
+}
+
+
+public sealed class PolicyDependencyPolicy
+{
+    [JsonPropertyName("allow")]
+    public PolicyDependencyAccess Allow { get; set; } = new();
+
+    [JsonPropertyName("deny")]
+    public PolicyDependencyAccess Deny { get; set; } = new();
+}
+
+public sealed class PolicyDependencyAccess
+{
+    [JsonPropertyName("packages")]
+    public IReadOnlyList<string> Packages { get; set; } = Array.Empty<string>();
+
+    [JsonPropertyName("projects")]
+    public IReadOnlyList<string> Projects { get; set; } = Array.Empty<string>();
 }
