@@ -14,3 +14,6 @@ PSHARP2101 | Architecture | Error | Symbol is not permitted by active symbol all
 
 PSHARP3001 | ApiSurface | Error | Public/protected API is not approved by baseline
 PSHARP3002 | ApiSurface | Error | Approved public API is missing or changed
+
+PSHARP2201 | Capabilities | Error | Required capability is not explicitly allowed
+PSHARP2202 | Capabilities | Error | Sensitive API could not be classified safely
