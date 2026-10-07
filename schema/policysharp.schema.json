@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/mao2009/PolicySharp/raw/main/schema/policysharp.schema.json",
+  "title": "PolicySharp policy",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "mode", "scopes"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "version": { "const": 1 },
+    "mode": { "const": "default-deny" },
+    "scopes": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/scope" }
+    }
+  },
+  "$defs": {
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "match"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "match": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["namespace"],
+          "properties": {
+            "namespace": { "type": "string", "minLength": 1 }
+          }
+        },
+        "allow": { "$ref": "#/$defs/access" },
+        "deny": { "$ref": "#/$defs/access" }
+      }
+    },
+    "access": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "namespaces": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "capabilities": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "symbols": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        }
+      }
+    }
+  }
+}

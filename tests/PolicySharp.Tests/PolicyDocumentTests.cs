@@ -56,4 +56,52 @@ public sealed class PolicyDocumentTests
 
         Assert.Throws<System.Text.Json.JsonException>(() => PolicyDocument.Parse(json));
     }
+
+    [Fact]
+    public void Parse_RejectsUnsupportedVersion()
+    {
+        const string json = """
+        {
+          "version": 2,
+          "mode": "default-deny",
+          "scopes": []
+        }
+        """;
+
+        Assert.Throws<System.Text.Json.JsonException>(() => PolicyDocument.Parse(json));
+    }
+
+    [Fact]
+    public void Parse_RejectsDuplicateScopeIds()
+    {
+        const string json = """
+        {
+          "version": 1,
+          "mode": "default-deny",
+          "scopes": [
+            { "id": "domain", "match": { "namespace": "A.**" } },
+            { "id": "domain", "match": { "namespace": "B.**" } }
+          ]
+        }
+        """;
+
+        var exception = Assert.Throws<System.Text.Json.JsonException>(() => PolicyDocument.Parse(json));
+        Assert.Contains("Duplicate scope id", exception.Message);
+    }
+
+    [Fact]
+    public void Parse_RejectsScopeWithoutNamespaceMatch()
+    {
+        const string json = """
+        {
+          "version": 1,
+          "mode": "default-deny",
+          "scopes": [
+            { "id": "domain", "match": {} }
+          ]
+        }
+        """;
+
+        Assert.Throws<System.Text.Json.JsonException>(() => PolicyDocument.Parse(json));
+    }
 }
