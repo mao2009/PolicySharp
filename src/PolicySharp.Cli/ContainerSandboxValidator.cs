@@ -13,14 +13,17 @@ public sealed class ContainerSandboxValidator : ISandboxValidator
     private readonly IProcessRunner _runner;
     private readonly string _toolDirectory;
     private readonly string _image;
+    private readonly string? _requestedBackend;
     private string? _backend;
 
     public ContainerSandboxValidator(
         IProcessRunner runner,
         string? toolDirectory = null,
-        string? image = null,\n        string? requestedBackend = null)
+        string? image = null,
+        string? requestedBackend = null)
     {
-        _runner = runner;\n        _requestedBackend = requestedBackend;
+        _runner = runner;
+        _requestedBackend = requestedBackend;
         _toolDirectory =
             toolDirectory ??
             Path.GetDirectoryName(typeof(PatchGate).Assembly.Location) ??
@@ -187,12 +190,19 @@ public sealed class ContainerSandboxValidator : ISandboxValidator
         CancellationToken cancellationToken)
     {
         var requested =
+            _requestedBackend ??
             Environment.GetEnvironmentVariable("POLICYSHARP_SANDBOX_BACKEND");
 
         if (!string.IsNullOrWhiteSpace(requested))
         {
+            if (!string.Equals(requested, "docker", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(requested, "podman", StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
+            }
+
             return await BackendIsAvailableAsync(requested, cancellationToken)
-                ? requested
+                ? requested.ToLowerInvariant()
                 : null;
         }
 
