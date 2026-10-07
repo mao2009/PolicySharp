@@ -17,5 +17,6 @@
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="4.14.0" />
     <PackageReference Include="Microsoft.CodeAnalysis.Workspaces.MSBuild" Version="4.14.0" />
     <ProjectReference Include="../PolicySharp.Analyzers/PolicySharp.Analyzers.csproj" />
+    <ProjectReference Include="../PolicySharp.Core/PolicySharp.Core.csproj" />
   </ItemGroup>
 </Project>
