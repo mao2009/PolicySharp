@@ -38,6 +38,20 @@ public sealed class PolicyCheckResult
 
     public static PolicyCheckResult Allowed(params string[] projects) =>
         new(Array.Empty<PolicyCheckDiagnostic>(), projects);
+
+    public static PolicyCheckResult ConfigurationError(string id, string message) =>
+        new(
+            new[]
+            {
+                new PolicyCheckDiagnostic(
+                    "<configuration>",
+                    id,
+                    message,
+                    "<none>",
+                    true,
+                    new Dictionary<string, string?>())
+            },
+            Array.Empty<string>());
 }
 
 public static class PolicyCheckRunner
