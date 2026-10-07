@@ -1,6 +1,8 @@
+using System.Collections.Concurrent;
 using System.Collections.Immutable;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Diagnostics;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Operations;
 using PolicySharp.Core;
 
@@ -103,8 +105,10 @@ public sealed class PolicySharpAnalyzer : DiagnosticAnalyzer
                 return;
             }
 
+            var scopeFailures = new ConcurrentDictionary<string, byte>(StringComparer.Ordinal);
+
             startContext.RegisterOperationAction(
-                operationContext => AnalyzeOperation(operationContext, policy),
+                operationContext => AnalyzeOperation(operationContext, policy, scopeFailures),
                 OperationKind.Invocation,
                 OperationKind.ObjectCreation,
                 OperationKind.PropertyReference,
@@ -120,7 +124,7 @@ public sealed class PolicySharpAnalyzer : DiagnosticAnalyzer
                 OperationKind.DefaultValue);
 
             startContext.RegisterSymbolAction(
-                symbolContext => AnalyzeDeclarationSymbol(symbolContext, policy),
+                symbolContext => AnalyzeDeclarationSymbol(symbolContext, policy, scopeFailures),
                 SymbolKind.NamedType,
                 SymbolKind.Method,
                 SymbolKind.Property,
@@ -131,7 +135,8 @@ public sealed class PolicySharpAnalyzer : DiagnosticAnalyzer
 
     private static void AnalyzeOperation(
         OperationAnalysisContext context,
-        PolicyDocument policy)
+        PolicyDocument policy,
+        ConcurrentDictionary<string, byte> scopeFailures)
     {
         var sourceNamespace =
             context.ContainingSymbol?.ContainingNamespace?.ToDisplayString() ??
@@ -148,7 +153,8 @@ public sealed class PolicySharpAnalyzer : DiagnosticAnalyzer
                 policy,
                 sourceNamespace,
                 targetNamespace,
-                location);
+                location,
+                scopeFailures);
 
             if (diagnostic is not null)
             {
@@ -159,7 +165,8 @@ public sealed class PolicySharpAnalyzer : DiagnosticAnalyzer
 
     private static void AnalyzeDeclarationSymbol(
         SymbolAnalysisContext context,
-        PolicyDocument policy)
+        PolicyDocument policy,
+        ConcurrentDictionary<string, byte> scopeFailures)
     {
         if (context.Symbol.IsImplicitlyDeclared)
         {
@@ -190,7 +197,8 @@ public sealed class PolicySharpAnalyzer : DiagnosticAnalyzer
                 policy,
                 sourceNamespace,
                 targetNamespace,
-                location);
+                location,
+                scopeFailures);
 
             if (diagnostic is null)
             {
@@ -237,9 +245,17 @@ public sealed class PolicySharpAnalyzer : DiagnosticAnalyzer
                 yield break;
 
             case IVariableDeclaratorOperation variable:
-                foreach (var value in GetTypeNamespaces(variable.Symbol.Type))
+                var declaration = variable.Syntax
+                    .AncestorsAndSelf()
+                    .OfType<VariableDeclarationSyntax>()
+                    .FirstOrDefault();
+
+                if (declaration is null || !declaration.Type.IsVar)
                 {
-                    yield return value;
+                    foreach (var value in GetTypeNamespaces(variable.Symbol.Type))
+                    {
+                        yield return value;
+                    }
                 }
 
                 yield break;
@@ -252,7 +268,8 @@ public sealed class PolicySharpAnalyzer : DiagnosticAnalyzer
 
                 yield break;
 
-            case IConversionOperation conversion when conversion.Type is not null:
+            case IConversionOperation conversion
+                when !conversion.IsImplicit && conversion.Type is not null:
                 foreach (var value in GetTypeNamespaces(conversion.Type))
                 {
                     yield return value;
@@ -307,7 +324,8 @@ public sealed class PolicySharpAnalyzer : DiagnosticAnalyzer
         switch (symbol)
         {
             case INamedTypeSymbol namedType:
-                if (namedType.BaseType is not null)
+                if (namedType.BaseType is not null &&
+                    namedType.BaseType.SpecialType != SpecialType.System_Object)
                 {
                     yield return namedType.BaseType;
                 }
@@ -328,7 +346,10 @@ public sealed class PolicySharpAnalyzer : DiagnosticAnalyzer
                 break;
 
             case IMethodSymbol method:
-                yield return method.ReturnType;
+                if (!method.ReturnsVoid)
+                {
+                    yield return method.ReturnType;
+                }
 
                 foreach (var parameter in method.Parameters)
                 {
@@ -433,7 +454,8 @@ public sealed class PolicySharpAnalyzer : DiagnosticAnalyzer
         PolicyDocument policy,
         string sourceNamespace,
         string targetNamespace,
-        Location location)
+        Location location,
+        ConcurrentDictionary<string, byte> scopeFailures)
     {
         var decision = PolicyEvaluator.EvaluateNamespace(
             policy,
@@ -447,6 +469,11 @@ public sealed class PolicySharpAnalyzer : DiagnosticAnalyzer
 
         if (decision.Reason is PolicyReasonCode.MissingScope or PolicyReasonCode.AmbiguousScope)
         {
+            if (!scopeFailures.TryAdd(sourceNamespace, 0))
+            {
+                return null;
+            }
+
             const string suggestedAction =
                 "Assign the code to one explicitly approved scope.";
             var scopeMessage =
