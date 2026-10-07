@@ -34,3 +34,23 @@ CONFIG|Project|PSHARP0001|<none>|message|
 Backslashes, pipes, and newlines are escaped so coding agents can parse one diagnostic per line.
 
 The CLI never edits or broadens policy.
+
+## Transactional agent gate
+
+Use the gate when an AI agent should not write directly into the trusted working tree:
+
+```bash
+policysharp gate apply proposed.patch MySolution.sln
+```
+
+The gate validates the patch in an isolated Git worktree, runs PolicySharp and `dotnet build`, rechecks the repository state, and only then applies the exact validated patch.
+
+A protected policy/enforcement change requires approval supplied outside the patch:
+
+```bash
+POLICY_APPROVED=true policysharp gate apply proposed.patch MySolution.sln
+```
+
+The gate emits a JSON decision report. Exit code `0` means the validated patch was applied, `1` means DENY, and `2` means a configuration/repository precondition failed.
+
+For v1, the trusted working tree must be clean before validation. The patch file itself may be an untracked file inside the repository.
