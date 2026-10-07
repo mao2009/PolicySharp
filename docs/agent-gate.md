@@ -14,8 +14,10 @@ untrusted agent
 isolated Git worktree
       |
       +-- protected-path check
-      +-- PolicySharp analyzers
-      +-- dotnet build
+      +-- Docker/Podman sandbox
+      |    +-- dotnet restore
+      |    +-- PolicySharp check (--network none)
+      |    +-- dotnet build --no-restore (--network none)
       |
       v
 revalidate HEAD + working tree + patch + policy fingerprints
@@ -78,6 +80,21 @@ An agent integration should make the gate the only approved source-write path:
 5. Do not modify policy to silence a denial unless a human explicitly requested a policy change.
 ```
 
-## v1 limits
+## Validation sandbox
 
-The gate is a transactional source-patch gate, not a complete operating-system sandbox. It does not prevent an untrusted process that already has filesystem permissions from bypassing the CLI and writing files directly. Agent hosts should therefore expose the gate as the permitted write mechanism and restrict direct writes separately when stronger isolation is required.
+Default Agent Gate validation requires Docker or Podman. The patched temporary worktree is the only repository tree mounted into the validation container. The trusted working tree is never mounted.
+
+Restore runs in the container with its normal container network so NuGet packages can be acquired. PolicySharp check and build then run in new containers with `--network none` and reuse the restored package cache from the isolated worktree.
+
+The PolicySharp tool directory is mounted read-only at `/policysharp/tool`.
+
+Environment controls:
+
+- `POLICYSHARP_SANDBOX_BACKEND=docker|podman` forces a backend. If unavailable, validation fails closed.
+- `POLICYSHARP_SANDBOX_IMAGE=<image>` overrides the default `mcr.microsoft.com/dotnet/sdk:8.0`.
+
+There is intentionally no automatic host-execution fallback.
+
+## Limits
+
+The container sandbox prevents patched MSBuild from executing directly on the host, but it is not a general-purpose malware sandbox. Agent hosts should still restrict direct filesystem/process access so the Gate remains the approved source-write path.
