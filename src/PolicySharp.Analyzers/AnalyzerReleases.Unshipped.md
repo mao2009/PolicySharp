@@ -11,3 +11,6 @@ PSHARP2001 | Architecture | Error | Dependency not explicitly allowed
 PSHARP2002 | Architecture | Error | Source namespace not covered by a scope
 
 PSHARP2101 | Architecture | Error | Symbol is not permitted by active symbol allowlist
+
+PSHARP3001 | ApiSurface | Error | Public/protected API is not approved by baseline
+PSHARP3002 | ApiSurface | Error | Approved public API is missing or changed

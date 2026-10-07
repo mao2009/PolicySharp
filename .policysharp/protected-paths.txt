@@ -6,6 +6,7 @@ Directory.Build.props
 schema/policysharp.schema.json
 PublicAPI.Shipped.txt
 PublicAPI.Unshipped.txt
+PolicySharp.PublicAPI.txt
 .github/workflows/policy-integrity.yml
 .policysharp/protected-paths.txt
 scripts/check-policy-trust-boundary.sh
