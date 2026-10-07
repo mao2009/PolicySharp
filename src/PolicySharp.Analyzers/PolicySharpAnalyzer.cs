@@ -13,6 +13,13 @@ public sealed class PolicySharpAnalyzer : DiagnosticAnalyzer
     public const string MissingPolicyDiagnosticId = "PSHARP0002";
     public const string MissingScopeDiagnosticId = "PSHARP2002";
 
+    public const string DecisionProperty = "policysharp.decision";
+    public const string ReasonProperty = "policysharp.reason";
+    public const string ScopeProperty = "policysharp.scope";
+    public const string SourceProperty = "policysharp.source";
+    public const string TargetProperty = "policysharp.target";
+    public const string SuggestedActionProperty = "policysharp.suggestedAction";
+
     private static readonly DiagnosticDescriptor NotAllowed = new(
         NotAllowedDiagnosticId,
         "Dependency is not allowed by policy",
@@ -121,28 +128,44 @@ public sealed class PolicySharpAnalyzer : DiagnosticAnalyzer
 
         if (decision.Reason is PolicyReasonCode.MissingScope or PolicyReasonCode.AmbiguousScope)
         {
+            const string suggestedAction = "Assign the code to one explicitly approved scope.";
             var scopeMessage =
                 $"Source namespace '{sourceNamespace}' is not covered by exactly one policy scope. " +
                 $"Decision: DENIED; Reason: {decision.Reason}. " +
-                "Assign the code to one explicitly approved scope. Do not modify policysharp.json automatically.";
+                $"{suggestedAction} Do not modify policysharp.json automatically.";
 
             context.ReportDiagnostic(Diagnostic.Create(
-                MissingScope,
-                context.Node.GetLocation(),
-                scopeMessage));
+                descriptor: MissingScope,
+                location: context.Node.GetLocation(),
+                properties: CreateProperties(decision, suggestedAction),
+                messageArgs: new object[] { scopeMessage }));
             return;
         }
 
+        const string dependencyAction = "Use an already-approved abstraction from an allowed namespace.";
         var message =
             $"Dependency is not allowed by the active scope. " +
             $"Scope: {decision.ScopeId ?? "<none>"}; Source: {decision.Source}; Target: {decision.Target}; " +
             $"Decision: DENIED; Reason: {decision.Reason}. " +
-            "Use an already-approved abstraction from an allowed namespace. " +
-            "Do not modify policysharp.json automatically.";
+            $"{dependencyAction} Do not modify policysharp.json automatically.";
 
         context.ReportDiagnostic(Diagnostic.Create(
-            NotAllowed,
-            context.Node.GetLocation(),
-            message));
+            descriptor: NotAllowed,
+            location: context.Node.GetLocation(),
+            properties: CreateProperties(decision, dependencyAction),
+            messageArgs: new object[] { message }));
+    }
+
+    private static ImmutableDictionary<string, string?> CreateProperties(
+        PolicyDecision decision,
+        string suggestedAction)
+    {
+        return ImmutableDictionary<string, string?>.Empty
+            .Add(DecisionProperty, "DENIED")
+            .Add(ReasonProperty, decision.Reason.ToString())
+            .Add(ScopeProperty, decision.ScopeId)
+            .Add(SourceProperty, decision.Source)
+            .Add(TargetProperty, decision.Target)
+            .Add(SuggestedActionProperty, suggestedAction);
     }
 }
