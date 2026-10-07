@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "rules": [
+    {
+      "id": "no-process-start",
+      "kind": "forbid-api",
+      "symbol": "System.Diagnostics.Process.Start",
+      "message": "Starting external processes is not allowed in this project. Introduce an approved process abstraction instead."
+    },
+    {
+      "id": "domain-must-not-depend-on-infrastructure",
+      "kind": "forbid-dependency",
+      "from": "Sample.Domain.**",
+      "target": "Sample.Infrastructure.**",
+      "message": "Domain code must not depend on Infrastructure. Move the contract into Domain/Application and inject an implementation."
+    }
+  ]
+}
