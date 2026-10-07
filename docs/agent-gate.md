@@ -122,4 +122,4 @@ There is intentionally no automatic host-execution fallback.
 
 ## Limits
 
-The container sandbox prevents patched MSBuild from executing directly on the host, but it is not a general-purpose malware sandbox. Agent hosts should still restrict direct filesystem/process access so the Gate remains the approved source-write path.
+Host mode provides transactional source isolation, not security isolation. Container mode reduces direct host exposure but is still not a general-purpose malware sandbox. Agent hosts should restrict direct filesystem/process access so the Gate remains the approved source-write path.
