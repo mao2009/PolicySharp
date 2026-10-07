@@ -17,6 +17,9 @@ public sealed class PolicyDocument
     [JsonPropertyName("dependencies")]
     public PolicyDependencyPolicy Dependencies { get; set; } = new();
 
+    [JsonPropertyName("writes")]
+    public PolicyWritePolicy Writes { get; set; } = new();
+
     public static PolicyDocument Parse(string json)
     {
         if (string.IsNullOrWhiteSpace(json))
@@ -51,6 +54,9 @@ public sealed class PolicyDocument
         Dependencies ??= new PolicyDependencyPolicy();
         Dependencies.Allow ??= new PolicyDependencyAccess();
         Dependencies.Deny ??= new PolicyDependencyAccess();
+        Writes ??= new PolicyWritePolicy();
+        Writes.Allow ??= Array.Empty<string>();
+        Writes.Deny ??= Array.Empty<string>();
 
         var ids = new HashSet<string>(StringComparer.Ordinal);
         for (var index = 0; index < Scopes.Count; index++)
@@ -136,4 +142,14 @@ public sealed class PolicyDependencyAccess
 
     [JsonPropertyName("projects")]
     public IReadOnlyList<string> Projects { get; set; } = Array.Empty<string>();
+}
+
+
+public sealed class PolicyWritePolicy
+{
+    [JsonPropertyName("allow")]
+    public IReadOnlyList<string> Allow { get; set; } = Array.Empty<string>();
+
+    [JsonPropertyName("deny")]
+    public IReadOnlyList<string> Deny { get; set; } = Array.Empty<string>();
 }

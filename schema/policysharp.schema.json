@@ -13,7 +13,8 @@
       "type": "array",
       "items": { "$ref": "#/$defs/scope" }
     },
-    "dependencies": { "$ref": "#/$defs/dependencyPolicy" }
+    "dependencies": { "$ref": "#/$defs/dependencyPolicy" },
+    "writes": { "$ref": "#/$defs/writePolicy" }
   },
   "$defs": {
     "scope": {
@@ -32,6 +33,22 @@
         },
         "allow": { "$ref": "#/$defs/access" },
         "deny": { "$ref": "#/$defs/access" }
+      }
+    },
+    "writePolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "allow": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "deny": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        }
       }
     },
     "dependencyPolicy": {
