@@ -97,7 +97,32 @@ public sealed class PatchGate
         var runner = new ProcessRunner();
         return new PatchGate(
             runner,
-            PolicyCheckRunner.CheckAsync,
+            async (inputPath, cancellationToken) =>
+            {
+                var workingDirectory =
+                    Path.GetDirectoryName(inputPath) ?? Environment.CurrentDirectory;
+
+                var restore = await runner.RunAsync(
+                    "dotnet",
+                    new[]
+                    {
+                        "restore",
+                        inputPath,
+                        "--nologo"
+                    },
+                    workingDirectory,
+                    cancellationToken);
+
+                if (!restore.Succeeded)
+                {
+                    return PolicyCheckResult.ConfigurationError(
+                        "PSHARPGATE0018",
+                        "Restore failed in the isolated workspace. " +
+                        CombineProcessOutput(restore));
+                }
+
+                return await PolicyCheckRunner.CheckAsync(inputPath, cancellationToken);
+            },
             async (inputPath, cancellationToken) =>
                 await runner.RunAsync(
                     "dotnet",
@@ -105,6 +130,7 @@ public sealed class PatchGate
                     {
                         "build",
                         inputPath,
+                        "--no-restore",
                         "--nologo",
                         "--verbosity",
                         "minimal"
