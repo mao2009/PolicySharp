@@ -1,18 +1,33 @@
 {
   "version": 1,
-  "rules": [
+  "mode": "default-deny",
+  "scopes": [
     {
-      "id": "no-process-start",
-      "kind": "forbid-api",
-      "symbol": "System.Diagnostics.Process.Start",
-      "message": "Starting external processes is not allowed in this project. Introduce an approved process abstraction instead."
-    },
-    {
-      "id": "domain-must-not-depend-on-infrastructure",
-      "kind": "forbid-dependency",
-      "from": "Sample.Domain.**",
-      "target": "Sample.Infrastructure.**",
-      "message": "Domain code must not depend on Infrastructure. Move the contract into Domain/Application and inject an implementation."
+      "id": "domain",
+      "match": {
+        "namespace": "Sample.Domain.**"
+      },
+      "allow": {
+        "namespaces": [
+          "System",
+          "System.Collections.Generic",
+          "System.Threading",
+          "System.Threading.Tasks",
+          "Sample.Domain.**"
+        ],
+        "capabilities": [
+          "pure-computation"
+        ],
+        "symbols": []
+      },
+      "deny": {
+        "namespaces": [
+          "System.Diagnostics",
+          "System.Reflection.Emit"
+        ],
+        "capabilities": [],
+        "symbols": []
+      }
     }
   ]
 }
