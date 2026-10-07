@@ -62,6 +62,31 @@ The gate records:
 
 Immediately before applying the patch, the gate recomputes the trusted repository state and refuses to continue if it differs from the state that was validated.
 
+## Repository write allowlist
+
+A repository can limit where an agent patch may write:
+
+```json
+{
+  "writes": {
+    "allow": [
+      "src/MyApp.Application/**",
+      "tests/**"
+    ],
+    "deny": [
+      "src/Generated/**",
+      "infra/**"
+    ]
+  }
+}
+```
+
+When `writes.allow` is non-empty, any unlisted changed path is DENY. Explicit deny always wins.
+
+The Gate evaluates modified, added, deleted, and renamed paths. For renames, both the old path and the new path must be permitted.
+
+The protected-path trust boundary remains stronger and separate. A write allowlist never grants permission to modify a protected path without external approval.
+
 ## External approval
 
 A patch cannot approve itself.
