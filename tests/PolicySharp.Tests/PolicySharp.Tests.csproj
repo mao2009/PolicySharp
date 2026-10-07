@@ -12,5 +12,6 @@
   <ItemGroup>
     <ProjectReference Include="../../src/PolicySharp.Core/PolicySharp.Core.csproj" />
     <ProjectReference Include="../../src/PolicySharp.Analyzers/PolicySharp.Analyzers.csproj" />
+    <ProjectReference Include="../../src/PolicySharp.Cli/PolicySharp.Cli.csproj" />
   </ItemGroup>
 </Project>
