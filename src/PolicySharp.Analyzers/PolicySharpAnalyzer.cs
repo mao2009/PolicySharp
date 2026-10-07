@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Diagnostics;
+using Microsoft.CodeAnalysis.Operations;
 using PolicySharp.Core;
 
 namespace PolicySharp.Analyzers;
@@ -100,18 +101,20 @@ public sealed class PolicySharpAnalyzer : DiagnosticAnalyzer
                 return;
             }
 
-            startContext.RegisterSyntaxNodeAction(
-                syntaxContext => AnalyzeNode(syntaxContext, policy),
-                Microsoft.CodeAnalysis.CSharp.SyntaxKind.InvocationExpression,
-                Microsoft.CodeAnalysis.CSharp.SyntaxKind.ObjectCreationExpression,
-                Microsoft.CodeAnalysis.CSharp.SyntaxKind.IdentifierName,
-                Microsoft.CodeAnalysis.CSharp.SyntaxKind.GenericName);
+            startContext.RegisterOperationAction(
+                operationContext => AnalyzeOperation(operationContext, policy),
+                OperationKind.Invocation,
+                OperationKind.ObjectCreation,
+                OperationKind.PropertyReference,
+                OperationKind.FieldReference,
+                OperationKind.EventReference,
+                OperationKind.MethodReference);
         });
     }
 
-    private static void AnalyzeNode(SyntaxNodeAnalysisContext context, PolicyDocument policy)
+    private static void AnalyzeOperation(OperationAnalysisContext context, PolicyDocument policy)
     {
-        var symbol = context.SemanticModel.GetSymbolInfo(context.Node, context.CancellationToken).Symbol;
+        var symbol = GetReferencedSymbol(context.Operation);
         if (symbol is null)
         {
             return;
@@ -136,7 +139,7 @@ public sealed class PolicySharpAnalyzer : DiagnosticAnalyzer
 
             context.ReportDiagnostic(Diagnostic.Create(
                 descriptor: MissingScope,
-                location: context.Node.GetLocation(),
+                location: context.Operation.Syntax.GetLocation(),
                 properties: CreateProperties(decision, suggestedAction),
                 messageArgs: new object[] { scopeMessage }));
             return;
@@ -151,10 +154,22 @@ public sealed class PolicySharpAnalyzer : DiagnosticAnalyzer
 
         context.ReportDiagnostic(Diagnostic.Create(
             descriptor: NotAllowed,
-            location: context.Node.GetLocation(),
+            location: context.Operation.Syntax.GetLocation(),
             properties: CreateProperties(decision, dependencyAction),
             messageArgs: new object[] { message }));
     }
+
+    private static ISymbol? GetReferencedSymbol(IOperation operation) =>
+        operation switch
+        {
+            IInvocationOperation invocation => invocation.TargetMethod,
+            IObjectCreationOperation creation => creation.Constructor,
+            IPropertyReferenceOperation property => property.Property,
+            IFieldReferenceOperation field => field.Field,
+            IEventReferenceOperation eventReference => eventReference.Event,
+            IMethodReferenceOperation methodReference => methodReference.Method,
+            _ => null
+        };
 
     private static ImmutableDictionary<string, string?> CreateProperties(
         PolicyDecision decision,
