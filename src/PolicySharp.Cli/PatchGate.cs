@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
+using PolicySharp.Core;
 
 namespace PolicySharp.Cli;
 
@@ -308,12 +309,12 @@ public sealed class PatchGate
                     });
             }
 
-            var affectedFilesResult = await RunGitAsync(
+            var changedPathsResult = await RunGitAsync(
                 temporaryWorktree,
-                new[] { "diff", "--cached", "--name-only", "-z", "HEAD" },
+                new[] { "diff", "--cached", "--name-status", "-z", "--find-renames", "HEAD" },
                 cancellationToken);
 
-            if (!affectedFilesResult.Succeeded)
+            if (!changedPathsResult.Succeeded)
             {
                 return Deny(
                     "AffectedFilesUnavailable",
@@ -325,12 +326,11 @@ public sealed class PatchGate
                     exitCode: 2,
                     violations: new[]
                     {
-                        Violation("PSHARPGATE0011", affectedFilesResult.StandardError)
+                        Violation("PSHARPGATE0011", changedPathsResult.StandardError)
                     });
             }
 
-            var affectedFiles = SplitNullSeparated(affectedFilesResult.StandardOutput)
-                .Select(NormalizePath)
+            var affectedFiles = ParseChangedPaths(changedPathsResult.StandardOutput)
                 .OrderBy(path => path, StringComparer.Ordinal)
                 .ToArray();
 
@@ -354,6 +354,97 @@ public sealed class PatchGate
                         .Select(path => Violation(
                             "PSHARPGATE0012",
                             $"Protected policy path requires external human approval: {path}"))
+                        .ToArray());
+            }
+
+            var policyCandidates = EnumeratePolicyFiles(temporaryWorktree)
+                .Where(path => string.Equals(
+                    Path.GetFileName(path),
+                    "policysharp.json",
+                    StringComparison.OrdinalIgnoreCase))
+                .OrderBy(path => NormalizePath(Path.GetRelativePath(temporaryWorktree, path)), StringComparer.Ordinal)
+                .ToArray();
+
+            if (policyCandidates.Length != 1)
+            {
+                return Deny(
+                    "PolicyConfigurationError",
+                    baseCommit,
+                    initialState.Fingerprint,
+                    patchSha256,
+                    basePolicySha256,
+                    await ComputePolicyFingerprintAsync(temporaryWorktree, cancellationToken),
+                    affectedFiles,
+                    exitCode: 2,
+                    violations: new[]
+                    {
+                        Violation(
+                            "PSHARPGATE0201",
+                            policyCandidates.Length == 0
+                                ? "Exactly one policysharp.json is required for repository write policy evaluation."
+                                : "Multiple policysharp.json files make repository write policy ambiguous: " +
+                                  string.Join(", ", policyCandidates.Select(path =>
+                                      NormalizePath(Path.GetRelativePath(temporaryWorktree, path)))))
+                    });
+            }
+
+            PolicyDocument repositoryPolicy;
+            try
+            {
+                repositoryPolicy = PolicyDocument.Parse(
+                    await File.ReadAllTextAsync(policyCandidates[0], cancellationToken));
+            }
+            catch (Exception exception)
+            {
+                return Deny(
+                    "PolicyConfigurationError",
+                    baseCommit,
+                    initialState.Fingerprint,
+                    patchSha256,
+                    basePolicySha256,
+                    await ComputePolicyFingerprintAsync(temporaryWorktree, cancellationToken),
+                    affectedFiles,
+                    exitCode: 2,
+                    violations: new[]
+                    {
+                        Violation(
+                            "PSHARPGATE0202",
+                            $"Repository write policy could not be loaded: {exception.Message}")
+                    });
+            }
+
+            var writeViolations = affectedFiles
+                .Select(path => new
+                {
+                    Path = path,
+                    Decision = PolicyWriteEvaluator.Evaluate(repositoryPolicy, path)
+                })
+                .Where(item => !item.Decision.IsAllowed)
+                .ToArray();
+
+            if (writeViolations.Length > 0)
+            {
+                return Deny(
+                    "WritePathDenied",
+                    baseCommit,
+                    initialState.Fingerprint,
+                    patchSha256,
+                    basePolicySha256,
+                    await ComputePolicyFingerprintAsync(temporaryWorktree, cancellationToken),
+                    affectedFiles,
+                    exitCode: 1,
+                    violations: writeViolations
+                        .Select(item => new GateViolation(
+                            "PSHARPGATE0200",
+                            "<gate>",
+                            $"Repository write '{item.Path}' is denied. Reason: {item.Decision.Reason}.",
+                            item.Path,
+                            new Dictionary<string, string?>
+                            {
+                                ["policysharp.decision"] = "DENIED",
+                                ["policysharp.reason"] = item.Decision.Reason.ToString(),
+                                ["policysharp.target"] = item.Path
+                            }))
                         .ToArray());
             }
 
@@ -753,6 +844,43 @@ public sealed class PatchGate
         }
 
         return relative;
+    }
+
+    private static string[] ParseChangedPaths(string value)
+    {
+        var tokens = SplitNullSeparated(value);
+        var paths = new HashSet<string>(StringComparer.Ordinal);
+
+        for (var index = 0; index < tokens.Length;)
+        {
+            var status = tokens[index++];
+            if (index >= tokens.Length)
+            {
+                break;
+            }
+
+            if (status.StartsWith("R", StringComparison.Ordinal) ||
+                status.StartsWith("C", StringComparison.Ordinal))
+            {
+                var oldPath = NormalizePath(tokens[index++]);
+                if (index >= tokens.Length)
+                {
+                    paths.Add(oldPath);
+                    break;
+                }
+
+                var newPath = NormalizePath(tokens[index++]);
+                paths.Add(oldPath);
+                paths.Add(newPath);
+                continue;
+            }
+
+            paths.Add(NormalizePath(tokens[index++]));
+        }
+
+        return paths
+            .OrderBy(path => path, StringComparer.Ordinal)
+            .ToArray();
     }
 
     private static string[] SplitNullSeparated(string value) =>
