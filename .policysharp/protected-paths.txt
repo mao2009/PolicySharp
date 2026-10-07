@@ -10,3 +10,6 @@ PolicySharp.PublicAPI.txt
 .github/workflows/policy-integrity.yml
 .policysharp/protected-paths.txt
 scripts/check-policy-trust-boundary.sh
+src/PolicySharp.Core/**
+src/PolicySharp.Analyzers/**
+src/PolicySharp.Cli/**
