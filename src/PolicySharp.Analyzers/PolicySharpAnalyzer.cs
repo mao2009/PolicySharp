@@ -10,6 +10,8 @@ public sealed class PolicySharpAnalyzer : DiagnosticAnalyzer
 {
     public const string NotAllowedDiagnosticId = "PSHARP2001";
     public const string InvalidPolicyDiagnosticId = "PSHARP0001";
+    public const string MissingPolicyDiagnosticId = "PSHARP0002";
+    public const string MissingScopeDiagnosticId = "PSHARP2002";
 
     private static readonly DiagnosticDescriptor NotAllowed = new DiagnosticDescriptor(
         NotAllowedDiagnosticId,
@@ -28,8 +30,25 @@ public sealed class PolicySharpAnalyzer : DiagnosticAnalyzer
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);
 
+    private static readonly DiagnosticDescriptor MissingPolicy = new DiagnosticDescriptor(
+        MissingPolicyDiagnosticId,
+        "PolicySharp policy is required",
+        "policysharp.json is required. PolicySharp fails closed when no policy is available.",
+        "Configuration",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    private static readonly DiagnosticDescriptor MissingScope = new DiagnosticDescriptor(
+        MissingScopeDiagnosticId,
+        "Source code is not covered by a policy scope",
+        "{0}",
+        "Architecture",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "PolicySharp fails closed when source code cannot be assigned to an explicit policy scope.");
+
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics =>
-        ImmutableArray.Create(NotAllowed, InvalidPolicy);
+        ImmutableArray.Create(NotAllowed, InvalidPolicy, MissingPolicy, MissingScope);
 
     public override void Initialize(AnalysisContext context)
     {
@@ -46,6 +65,10 @@ public sealed class PolicySharpAnalyzer : DiagnosticAnalyzer
 
             if (policyFile is null)
             {
+                startContext.RegisterCompilationEndAction(endContext =>
+                    endContext.ReportDiagnostic(Diagnostic.Create(
+                        MissingPolicy,
+                        Location.None)));
                 return;
             }
 
@@ -85,10 +108,18 @@ public sealed class PolicySharpAnalyzer : DiagnosticAnalyzer
         var scope = policy.Scopes.FirstOrDefault(candidate =>
             MatchesNamespace(sourceNamespace, candidate.Match.Namespace));
 
-        // No matching scope means PolicySharp has no authority over this code yet.
-        // A later strict-project mode will optionally make missing scopes fail closed.
         if (scope is null)
         {
+            var message =
+                $"No policy scope matches source namespace '{sourceNamespace}'. " +
+                "Decision: DENIED; Reason: source scope is unknown or ambiguous. " +
+                "Assign the code to an explicitly approved scope. " +
+                "Do not modify policysharp.json automatically.";
+
+            context.ReportDiagnostic(Diagnostic.Create(
+                MissingScope,
+                context.Node.GetLocation(),
+                message));
             return;
         }
 
