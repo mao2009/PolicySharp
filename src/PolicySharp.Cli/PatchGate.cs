@@ -36,6 +36,10 @@ public sealed class GateReport
 
     public string? PolicySharpVersion { get; init; }
 
+    public string? SandboxBackend { get; init; }
+
+    public string? SandboxImage { get; init; }
+
     public IReadOnlyList<string> AffectedFiles { get; init; } = Array.Empty<string>();
 
     public IReadOnlyList<string> EvaluatedProjects { get; init; } = Array.Empty<string>();
@@ -76,8 +80,9 @@ public sealed class PatchGate
         };
 
     private readonly IProcessRunner _processRunner;
-    private readonly Func<string, CancellationToken, Task<PolicyCheckResult>> _policyChecker;
-    private readonly Func<string, CancellationToken, Task<ProcessResult>> _builder;
+    private readonly Func<string, CancellationToken, Task<PolicyCheckResult>>? _policyChecker;
+    private readonly Func<string, CancellationToken, Task<ProcessResult>>? _builder;
+    private readonly ContainerSandboxValidator? _sandboxValidator;
     private readonly Func<CancellationToken, Task>? _beforeFinalApply;
 
     public PatchGate(
@@ -89,7 +94,19 @@ public sealed class PatchGate
         _processRunner = processRunner;
         _policyChecker = policyChecker;
         _builder = builder;
+        _sandboxValidator = null;
         _beforeFinalApply = beforeFinalApply;
+    }
+
+    private PatchGate(
+        IProcessRunner processRunner,
+        ContainerSandboxValidator sandboxValidator)
+    {
+        _processRunner = processRunner;
+        _sandboxValidator = sandboxValidator;
+        _policyChecker = null;
+        _builder = null;
+        _beforeFinalApply = null;
     }
 
     public static PatchGate CreateDefault()
@@ -97,46 +114,7 @@ public sealed class PatchGate
         var runner = new ProcessRunner();
         return new PatchGate(
             runner,
-            async (inputPath, cancellationToken) =>
-            {
-                var workingDirectory =
-                    Path.GetDirectoryName(inputPath) ?? Environment.CurrentDirectory;
-
-                var restore = await runner.RunAsync(
-                    "dotnet",
-                    new[]
-                    {
-                        "restore",
-                        inputPath,
-                        "--nologo"
-                    },
-                    workingDirectory,
-                    cancellationToken);
-
-                if (!restore.Succeeded)
-                {
-                    return PolicyCheckResult.ConfigurationError(
-                        "PSHARPGATE0018",
-                        "Restore failed in the isolated workspace. " +
-                        CombineProcessOutput(restore));
-                }
-
-                return await PolicyCheckRunner.CheckAsync(inputPath, cancellationToken);
-            },
-            async (inputPath, cancellationToken) =>
-                await runner.RunAsync(
-                    "dotnet",
-                    new[]
-                    {
-                        "build",
-                        inputPath,
-                        "--no-restore",
-                        "--nologo",
-                        "--verbosity",
-                        "minimal"
-                    },
-                    Path.GetDirectoryName(inputPath) ?? Environment.CurrentDirectory,
-                    cancellationToken));
+            new ContainerSandboxValidator(runner));
     }
 
     public async Task<GateReport> ExecuteAsync(
@@ -402,7 +380,29 @@ public sealed class PatchGate
                     });
             }
 
-            var checkResult = await _policyChecker(temporaryInputPath, cancellationToken);
+            PolicyCheckResult checkResult;
+            ProcessResult buildResult;
+            string? sandboxBackend = null;
+            string? sandboxImage = null;
+
+            if (_sandboxValidator is not null)
+            {
+                var validation = await _sandboxValidator.ValidateAsync(
+                    temporaryInputPath,
+                    cancellationToken);
+                checkResult = validation.PolicyResult;
+                buildResult = validation.BuildResult;
+                sandboxBackend = validation.Backend;
+                sandboxImage = validation.Image;
+            }
+            else
+            {
+                checkResult = await _policyChecker!(temporaryInputPath, cancellationToken);
+                buildResult = checkResult.Diagnostics.Count == 0
+                    ? await _builder!(temporaryInputPath, cancellationToken)
+                    : new ProcessResult(-1, string.Empty, "Build skipped because policy check failed.");
+            }
+
             var validatedPolicySha256 = await ComputePolicyFingerprintAsync(
                 temporaryWorktree,
                 cancellationToken);
@@ -421,10 +421,11 @@ public sealed class PatchGate
                     affectedFiles,
                     checkResult.EvaluatedProjects,
                     checkResult.HasConfigurationErrors ? 2 : 1,
-                    checkResult.Diagnostics.Select(ToGateViolation).ToArray());
+                    checkResult.Diagnostics.Select(ToGateViolation).ToArray(),
+                    sandboxBackend,
+                    sandboxImage);
             }
 
-            var buildResult = await _builder(temporaryInputPath, cancellationToken);
             if (!buildResult.Succeeded)
             {
                 return Deny(
@@ -443,7 +444,9 @@ public sealed class PatchGate
                             "PSHARPGATE0014",
                             "The isolated patched workspace did not compile.",
                             CombineProcessOutput(buildResult))
-                    });
+                    },
+                    sandboxBackend: sandboxBackend,
+                    sandboxImage: sandboxImage);
             }
 
             if (_beforeFinalApply is not null)
@@ -547,6 +550,8 @@ public sealed class PatchGate
                 BasePolicySha256 = basePolicySha256,
                 PolicySha256 = validatedPolicySha256,
                 PolicySharpVersion = GetPolicySharpVersion(),
+                SandboxBackend = sandboxBackend,
+                SandboxImage = sandboxImage,
                 AffectedFiles = affectedFiles,
                 EvaluatedProjects = checkResult.EvaluatedProjects,
                 Violations = Array.Empty<GateViolation>(),
@@ -806,7 +811,9 @@ public sealed class PatchGate
         IReadOnlyList<string>? affectedFiles = null,
         IReadOnlyList<string>? evaluatedProjects = null,
         int exitCode = 1,
-        IReadOnlyList<GateViolation>? violations = null) =>
+        IReadOnlyList<GateViolation>? violations = null,
+        string? sandboxBackend = null,
+        string? sandboxImage = null) =>
         new()
         {
             Decision = "DENY",
@@ -817,6 +824,8 @@ public sealed class PatchGate
             BasePolicySha256 = basePolicySha256,
             PolicySha256 = policySha256,
             PolicySharpVersion = GetPolicySharpVersion(),
+            SandboxBackend = sandboxBackend,
+            SandboxImage = sandboxImage,
             AffectedFiles = affectedFiles ?? Array.Empty<string>(),
             EvaluatedProjects = evaluatedProjects ?? Array.Empty<string>(),
             Violations = violations ?? Array.Empty<GateViolation>(),

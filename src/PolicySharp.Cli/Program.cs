@@ -14,6 +14,15 @@ internal static class Program
             return result.ExitCode;
         }
 
+        if (args.Length == 3 &&
+            string.Equals(args[0], "check", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(args[1], "--json", StringComparison.OrdinalIgnoreCase))
+        {
+            var result = await PolicyCheckRunner.CheckAsync(Path.GetFullPath(args[2]));
+            Console.WriteLine(PolicyCheckRunner.SerializeJson(result));
+            return result.ExitCode;
+        }
+
         if (args.Length == 4 &&
             string.Equals(args[0], "gate", StringComparison.OrdinalIgnoreCase) &&
             string.Equals(args[1], "apply", StringComparison.OrdinalIgnoreCase))
@@ -35,6 +44,7 @@ internal static class Program
         Console.Error.WriteLine(
             "Usage:\n" +
             "  policysharp check <solution.sln|project.csproj>\n" +
+            "  policysharp check --json <solution.sln|project.csproj>\n" +
             "  policysharp gate apply <patch-file> <solution.sln|project.csproj>");
         return UsageErrorExitCode;
     }
