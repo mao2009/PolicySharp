@@ -2,7 +2,7 @@
   <PropertyGroup>
     <TargetFramework>netstandard2.0</TargetFramework>
     <IsPackable>true</IsPackable>
-    <PackageId>PolicySharp.Analyzers</PackageId>
+    <PackageId>loach.PolicySharp.Analyzers</PackageId>
     <Version>0.1.0-alpha.1</Version>
     <Authors>mao2009</Authors>
     <Description>Default-deny architectural guardrails for .NET codebases and AI coding agents.</Description>
