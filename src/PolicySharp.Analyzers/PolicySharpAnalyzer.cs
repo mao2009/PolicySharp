@@ -86,7 +86,7 @@ public sealed class PolicySharpAnalyzer : DiagnosticAnalyzer
 
         context.RegisterCompilationStartAction(startContext =>
         {
-            var resolution = AnalyzerPolicySourceResolver.Resolve(startContext);
+            var resolution = AnalyzerPolicySourceResolver.Resolve(startContext.Options, startContext.CancellationToken);
 
             if (resolution.Kind == PolicySourceResolutionKind.Missing)
             {
