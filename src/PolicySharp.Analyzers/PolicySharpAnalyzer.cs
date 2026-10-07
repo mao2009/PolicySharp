@@ -8,29 +8,19 @@ namespace PolicySharp.Analyzers;
 [DiagnosticAnalyzer(LanguageNames.CSharp)]
 public sealed class PolicySharpAnalyzer : DiagnosticAnalyzer
 {
-    public const string ForbiddenApiDiagnosticId = "PSHARP1001";
-    public const string ForbiddenDependencyDiagnosticId = "PSHARP1002";
+    public const string NotAllowedDiagnosticId = "PSHARP2001";
     public const string InvalidPolicyDiagnosticId = "PSHARP0001";
 
-    private static readonly DiagnosticDescriptor ForbiddenApi = new(
-        ForbiddenApiDiagnosticId,
-        "Forbidden API usage",
+    private static readonly DiagnosticDescriptor NotAllowed = new DiagnosticDescriptor(
+        NotAllowedDiagnosticId,
+        "Dependency is not allowed by policy",
         "{0}",
         "Architecture",
         DiagnosticSeverity.Error,
         isEnabledByDefault: true,
-        description: "The referenced API is forbidden by PolicySharp.");
+        description: "PolicySharp uses default-deny semantics. Dependencies must be explicitly allowed.");
 
-    private static readonly DiagnosticDescriptor ForbiddenDependency = new(
-        ForbiddenDependencyDiagnosticId,
-        "Forbidden dependency",
-        "{0}",
-        "Architecture",
-        DiagnosticSeverity.Error,
-        isEnabledByDefault: true,
-        description: "The dependency is forbidden by PolicySharp.");
-
-    private static readonly DiagnosticDescriptor InvalidPolicy = new(
+    private static readonly DiagnosticDescriptor InvalidPolicy = new DiagnosticDescriptor(
         InvalidPolicyDiagnosticId,
         "Invalid PolicySharp policy",
         "PolicySharp could not load policysharp.json: {0}",
@@ -39,7 +29,7 @@ public sealed class PolicySharpAnalyzer : DiagnosticAnalyzer
         isEnabledByDefault: true);
 
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics =>
-        ImmutableArray.Create(ForbiddenApi, ForbiddenDependency, InvalidPolicy);
+        ImmutableArray.Create(NotAllowed, InvalidPolicy);
 
     public override void Initialize(AnalysisContext context)
     {
@@ -65,7 +55,7 @@ public sealed class PolicySharpAnalyzer : DiagnosticAnalyzer
                 var text = policyFile.GetText(startContext.CancellationToken)?.ToString();
                 if (string.IsNullOrWhiteSpace(text))
                 {
-                    return;
+                    throw new InvalidOperationException("policysharp.json is empty.");
                 }
 
                 policy = PolicyDocument.Parse(text);
@@ -80,24 +70,8 @@ public sealed class PolicySharpAnalyzer : DiagnosticAnalyzer
                 return;
             }
 
-            var apiRules = policy.Rules
-                .Where(rule => string.Equals(rule.Kind, "forbid-api", StringComparison.OrdinalIgnoreCase)
-                    && !string.IsNullOrWhiteSpace(rule.Symbol))
-                .ToArray();
-
-            var dependencyRules = policy.Rules
-                .Where(rule => string.Equals(rule.Kind, "forbid-dependency", StringComparison.OrdinalIgnoreCase)
-                    && !string.IsNullOrWhiteSpace(rule.From)
-                    && !string.IsNullOrWhiteSpace(rule.Target))
-                .ToArray();
-
-            if (apiRules.Length == 0 && dependencyRules.Length == 0)
-            {
-                return;
-            }
-
             startContext.RegisterSyntaxNodeAction(
-                syntaxContext => AnalyzeNode(syntaxContext, apiRules, dependencyRules),
+                syntaxContext => AnalyzeNode(syntaxContext, policy),
                 Microsoft.CodeAnalysis.CSharp.SyntaxKind.InvocationExpression,
                 Microsoft.CodeAnalysis.CSharp.SyntaxKind.ObjectCreationExpression,
                 Microsoft.CodeAnalysis.CSharp.SyntaxKind.IdentifierName,
@@ -105,74 +79,78 @@ public sealed class PolicySharpAnalyzer : DiagnosticAnalyzer
         });
     }
 
-    private static void AnalyzeNode(
-        SyntaxNodeAnalysisContext context,
-        IReadOnlyList<PolicyRule> apiRules,
-        IReadOnlyList<PolicyRule> dependencyRules)
+    private static void AnalyzeNode(SyntaxNodeAnalysisContext context, PolicyDocument policy)
     {
+        var sourceNamespace = context.ContainingSymbol?.ContainingNamespace?.ToDisplayString() ?? string.Empty;
+        var scope = policy.Scopes.FirstOrDefault(candidate =>
+            MatchesNamespace(sourceNamespace, candidate.Match.Namespace));
+
+        // No matching scope means PolicySharp has no authority over this code yet.
+        // A later strict-project mode will optionally make missing scopes fail closed.
+        if (scope is null)
+        {
+            return;
+        }
+
         var symbol = context.SemanticModel.GetSymbolInfo(context.Node, context.CancellationToken).Symbol;
         if (symbol is null)
         {
             return;
         }
 
-        var canonicalSymbol = ToCanonicalName(symbol);
-        foreach (var rule in apiRules)
+        var targetNamespace = symbol.ContainingNamespace?.ToDisplayString() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(targetNamespace))
         {
-            if (MatchesApi(canonicalSymbol, rule.Symbol!))
-            {
-                context.ReportDiagnostic(Diagnostic.Create(
-                    ForbiddenApi,
-                    context.Node.GetLocation(),
-                    BuildMessage(rule, $"Use of '{canonicalSymbol}' is forbidden by policy '{rule.Id}'.")));
-                return;
-            }
+            return;
         }
 
-        var containingNamespace = context.ContainingSymbol?.ContainingNamespace?.ToDisplayString() ?? string.Empty;
-        var targetNamespace = symbol.ContainingNamespace?.ToDisplayString() ?? string.Empty;
-
-        foreach (var rule in dependencyRules)
+        if (MatchesAny(targetNamespace, scope.Deny.Namespaces))
         {
-            if (MatchesNamespace(containingNamespace, rule.From!) &&
-                MatchesNamespace(targetNamespace, rule.Target!))
-            {
-                context.ReportDiagnostic(Diagnostic.Create(
-                    ForbiddenDependency,
-                    context.Node.GetLocation(),
-                    BuildMessage(
-                        rule,
-                        $"Code in '{containingNamespace}' may not depend on '{targetNamespace}' (policy '{rule.Id}').")));
-                return;
-            }
+            Report(context, scope, sourceNamespace, targetNamespace, "target namespace is explicitly denied");
+            return;
+        }
+
+        if (!MatchesAny(targetNamespace, scope.Allow.Namespaces))
+        {
+            Report(context, scope, sourceNamespace, targetNamespace, "target namespace is not present in the scope allowlist");
         }
     }
 
-    private static string BuildMessage(PolicyRule rule, string fallback) =>
-        string.IsNullOrWhiteSpace(rule.Message) ? fallback : $"{rule.Message} [policy: {rule.Id}]";
+    private static void Report(
+        SyntaxNodeAnalysisContext context,
+        PolicyScope scope,
+        string sourceNamespace,
+        string targetNamespace,
+        string reason)
+    {
+        var message =
+            $"Dependency is not allowed by the active scope. " +
+            $"Scope: {scope.Id}; Source: {sourceNamespace}; Target: {targetNamespace}; " +
+            $"Decision: DENIED; Reason: {reason}. " +
+            "Use an already-approved abstraction from an allowed namespace. " +
+            "Do not modify policysharp.json automatically.";
 
-    private static bool MatchesApi(string actual, string configured) =>
-        string.Equals(actual, configured, StringComparison.Ordinal) ||
-        actual.StartsWith(configured + "(", StringComparison.Ordinal);
+        context.ReportDiagnostic(Diagnostic.Create(
+            NotAllowed,
+            context.Node.GetLocation(),
+            message));
+    }
+
+    private static bool MatchesAny(string actual, IReadOnlyList<string> patterns) =>
+        patterns.Any(pattern => MatchesNamespace(actual, pattern));
 
     private static bool MatchesNamespace(string actual, string pattern)
     {
+        if (string.IsNullOrWhiteSpace(pattern))
+        {
+            return false;
+        }
+
         var normalized = pattern.EndsWith(".**", StringComparison.Ordinal)
-            ? pattern[..^3]
+            ? pattern.Substring(0, pattern.Length - 3)
             : pattern;
 
         return string.Equals(actual, normalized, StringComparison.Ordinal) ||
             actual.StartsWith(normalized + ".", StringComparison.Ordinal);
-    }
-
-    private static string ToCanonicalName(ISymbol symbol)
-    {
-        if (symbol is IMethodSymbol method)
-        {
-            var typeName = method.ContainingType.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat);
-            return $"{typeName}.{method.Name}";
-        }
-
-        return symbol.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat);
     }
 }
