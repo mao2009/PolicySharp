@@ -1,0 +1,120 @@
+name: Publish NuGet
+
+on:
+  issues:
+    types: [labeled]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "Merged PR number to mark for NuGet publishing"
+        required: true
+        type: number
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+
+concurrency:
+  group: nuget-publish
+  cancel-in-progress: false
+
+env:
+  PUBLISH_LABEL: nuget-publish
+
+jobs:
+  label:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate merged PR on main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+        run: |
+          state="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq '.state')"
+          merged="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq '.merged')"
+          base="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq '.base.ref')"
+          if [[ "$state" != "closed" || "$merged" != "true" || "$base" != "main" ]]; then
+            echo "::error::PR #${PR_NUMBER} must be merged into main before publishing."
+            exit 1
+          fi
+      - name: Add publish label
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+        run: gh issue edit "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --add-label "$PUBLISH_LABEL"
+
+  publish:
+    if: >-
+      github.event_name == 'issues' &&
+      github.event.label.name == 'nuget-publish' &&
+      github.event.issue.pull_request != null
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve and validate merged PR
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          pr="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}")"
+          state="$(jq -r '.state' <<<"$pr")"
+          merged="$(jq -r '.merged' <<<"$pr")"
+          base="$(jq -r '.base.ref' <<<"$pr")"
+          merge_sha="$(jq -r '.merge_commit_sha' <<<"$pr")"
+          if [[ "$state" != "closed" || "$merged" != "true" || "$base" != "main" ]]; then
+            echo "::error::nuget-publish is only accepted on PRs merged into main."
+            exit 1
+          fi
+          echo "merge_sha=$merge_sha" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.pr.outputs.merge_sha }}
+          fetch-depth: 0
+      - name: Verify release commit is on main
+        run: |
+          git fetch origin main
+          git merge-base --is-ancestor HEAD origin/main || {
+            echo "::error::Merged PR commit is not reachable from main."
+            exit 1
+          }
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Resolve package version
+        id: version
+        run: |
+          version="$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' src/PolicySharp.Analyzers/PolicySharp.Analyzers.csproj | head -n1)"
+          if [[ -z "$version" ]]; then
+            echo "::error::Package version is missing."
+            exit 1
+          fi
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+      - name: Restore
+        run: dotnet restore PolicySharp.sln
+      - name: Build and test
+        run: |
+          dotnet build PolicySharp.sln --configuration Release --no-restore
+          dotnet test PolicySharp.sln --configuration Release --no-build
+      - name: Pack
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          mkdir -p artifacts
+          dotnet pack src/PolicySharp.Core/PolicySharp.Core.csproj --configuration Release --no-build --output artifacts -p:PackageVersion="$VERSION"
+          dotnet pack src/PolicySharp.Analyzers/PolicySharp.Analyzers.csproj --configuration Release --no-build --output artifacts -p:PackageVersion="$VERSION"
+          dotnet pack src/PolicySharp.Cli/PolicySharp.Cli.csproj --configuration Release --no-build --output artifacts -p:PackageVersion="$VERSION"
+          test "$(find artifacts -maxdepth 1 -name '*.nupkg' ! -name '*.symbols.nupkg' | wc -l)" -eq 3
+      - name: Publish to NuGet.org
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: |
+          if [[ -z "$NUGET_API_KEY" ]]; then
+            echo "::error::Repository secret NUGET_API_KEY is not configured."
+            exit 1
+          fi
+          dotnet nuget push "artifacts/*.nupkg" \
+            --api-key "$NUGET_API_KEY" \
+            --source https://api.nuget.org/v3/index.json \
+            --skip-duplicate
