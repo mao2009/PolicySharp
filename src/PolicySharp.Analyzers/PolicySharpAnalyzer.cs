@@ -14,6 +14,7 @@ public sealed class PolicySharpAnalyzer : DiagnosticAnalyzer
     public const string NotAllowedDiagnosticId = "PSHARP2001";
     public const string InvalidPolicyDiagnosticId = "PSHARP0001";
     public const string MissingPolicyDiagnosticId = "PSHARP0002";
+    public const string AmbiguousPolicyDiagnosticId = "PSHARP0003";
     public const string MissingScopeDiagnosticId = "PSHARP2002";
 
     public const string DecisionProperty = "policysharp.decision";
@@ -50,6 +51,15 @@ public sealed class PolicySharpAnalyzer : DiagnosticAnalyzer
         isEnabledByDefault: true,
         customTags: new[] { WellKnownDiagnosticTags.CompilationEnd });
 
+    private static readonly DiagnosticDescriptor AmbiguousPolicy = new(
+        AmbiguousPolicyDiagnosticId,
+        "PolicySharp policy is ambiguous",
+        "PolicySharp found multiple policysharp.json files: {0}",
+        "Configuration",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        customTags: new[] { WellKnownDiagnosticTags.CompilationEnd });
+
     private static readonly DiagnosticDescriptor MissingScope = new(
         MissingScopeDiagnosticId,
         "Source code is not covered by exactly one policy scope",
@@ -60,7 +70,12 @@ public sealed class PolicySharpAnalyzer : DiagnosticAnalyzer
         description: "PolicySharp fails closed when source code cannot be assigned to exactly one explicit policy scope.");
 
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics =>
-        ImmutableArray.Create(NotAllowed, InvalidPolicy, MissingPolicy, MissingScope);
+        ImmutableArray.Create(
+            NotAllowed,
+            InvalidPolicy,
+            MissingPolicy,
+            AmbiguousPolicy,
+            MissingScope);
 
     public override void Initialize(AnalysisContext context)
     {
@@ -71,39 +86,38 @@ public sealed class PolicySharpAnalyzer : DiagnosticAnalyzer
 
         context.RegisterCompilationStartAction(startContext =>
         {
-            var policyFile = startContext.Options.AdditionalFiles
-                .FirstOrDefault(file => string.Equals(
-                    Path.GetFileName(file.Path),
-                    "policysharp.json",
-                    StringComparison.OrdinalIgnoreCase));
+            var resolution = AnalyzerPolicySourceResolver.Resolve(startContext);
 
-            if (policyFile is null)
+            if (resolution.Kind == PolicySourceResolutionKind.Missing)
             {
                 startContext.RegisterCompilationEndAction(endContext =>
                     endContext.ReportDiagnostic(Diagnostic.Create(MissingPolicy, Location.None)));
                 return;
             }
 
-            PolicyDocument policy;
-            try
+            if (resolution.Kind == PolicySourceResolutionKind.Ambiguous)
             {
-                var text = policyFile.GetText(startContext.CancellationToken)?.ToString();
-                if (string.IsNullOrWhiteSpace(text))
-                {
-                    throw new InvalidOperationException("policysharp.json is empty.");
-                }
-
-                policy = PolicyDocument.Parse(text!);
+                var paths = string.Join(", ", resolution.Paths);
+                startContext.RegisterCompilationEndAction(endContext =>
+                    endContext.ReportDiagnostic(Diagnostic.Create(
+                        AmbiguousPolicy,
+                        Location.None,
+                        paths)));
+                return;
             }
-            catch (Exception exception)
+
+            if (resolution.Kind == PolicySourceResolutionKind.Invalid ||
+                resolution.Document is null)
             {
                 startContext.RegisterCompilationEndAction(endContext =>
                     endContext.ReportDiagnostic(Diagnostic.Create(
                         InvalidPolicy,
                         Location.None,
-                        exception.Message)));
+                        resolution.Error ?? "Unknown policy loading error.")));
                 return;
             }
+
+            var policy = resolution.Document;
 
             var scopeFailures = new ConcurrentDictionary<string, byte>(StringComparer.Ordinal);
 
