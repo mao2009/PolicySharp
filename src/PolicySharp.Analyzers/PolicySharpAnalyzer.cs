@@ -62,7 +62,9 @@ public sealed class PolicySharpAnalyzer : DiagnosticAnalyzer
 
     public override void Initialize(AnalysisContext context)
     {
-        context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.Analyze | GeneratedCodeAnalysisFlags.ReportDiagnostics);
+        context.ConfigureGeneratedCodeAnalysis(
+            GeneratedCodeAnalysisFlags.Analyze |
+            GeneratedCodeAnalysisFlags.ReportDiagnostics);
         context.EnableConcurrentExecution();
 
         context.RegisterCompilationStartAction(startContext =>
@@ -108,68 +110,374 @@ public sealed class PolicySharpAnalyzer : DiagnosticAnalyzer
                 OperationKind.PropertyReference,
                 OperationKind.FieldReference,
                 OperationKind.EventReference,
-                OperationKind.MethodReference);
+                OperationKind.MethodReference,
+                OperationKind.VariableDeclarator,
+                OperationKind.TypeOf,
+                OperationKind.Conversion,
+                OperationKind.IsType,
+                OperationKind.DeclarationPattern,
+                OperationKind.ArrayCreation,
+                OperationKind.DefaultValue);
+
+            startContext.RegisterSymbolAction(
+                symbolContext => AnalyzeDeclarationSymbol(symbolContext, policy),
+                SymbolKind.NamedType,
+                SymbolKind.Method,
+                SymbolKind.Property,
+                SymbolKind.Field,
+                SymbolKind.Event);
         });
     }
 
-    private static void AnalyzeOperation(OperationAnalysisContext context, PolicyDocument policy)
+    private static void AnalyzeOperation(
+        OperationAnalysisContext context,
+        PolicyDocument policy)
     {
-        var symbol = GetReferencedSymbol(context.Operation);
-        if (symbol is null)
+        var sourceNamespace =
+            context.ContainingSymbol?.ContainingNamespace?.ToDisplayString() ??
+            string.Empty;
+        var location = context.Operation.Syntax.GetLocation();
+
+        var namespaces = GetOperationTargetNamespaces(context.Operation)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.Ordinal);
+
+        foreach (var targetNamespace in namespaces)
+        {
+            var diagnostic = CreateDependencyDiagnostic(
+                policy,
+                sourceNamespace,
+                targetNamespace,
+                location);
+
+            if (diagnostic is not null)
+            {
+                context.ReportDiagnostic(diagnostic);
+            }
+        }
+    }
+
+    private static void AnalyzeDeclarationSymbol(
+        SymbolAnalysisContext context,
+        PolicyDocument policy)
+    {
+        if (context.Symbol.IsImplicitlyDeclared)
         {
             return;
         }
 
-        var sourceNamespace = context.ContainingSymbol?.ContainingNamespace?.ToDisplayString() ?? string.Empty;
-        var targetNamespace = symbol.ContainingNamespace?.ToDisplayString() ?? string.Empty;
-        var decision = PolicyEvaluator.EvaluateNamespace(policy, sourceNamespace, targetNamespace);
+        var location = context.Symbol.Locations
+            .FirstOrDefault(candidate => candidate.IsInSource);
+
+        if (location is null)
+        {
+            return;
+        }
+
+        var sourceNamespace =
+            context.Symbol.ContainingNamespace?.ToDisplayString() ??
+            string.Empty;
+
+        var targetNamespaces = GetDeclaredTypeDependencies(context.Symbol)
+            .SelectMany(GetTypeNamespaces)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        foreach (var targetNamespace in targetNamespaces)
+        {
+            var diagnostic = CreateDependencyDiagnostic(
+                policy,
+                sourceNamespace,
+                targetNamespace,
+                location);
+
+            if (diagnostic is null)
+            {
+                continue;
+            }
+
+            context.ReportDiagnostic(diagnostic);
+
+            if (diagnostic.Id == MissingScopeDiagnosticId)
+            {
+                // Scope ambiguity is about the declaring symbol, not each referenced type.
+                return;
+            }
+        }
+    }
+
+    private static IEnumerable<string> GetOperationTargetNamespaces(
+        IOperation operation)
+    {
+        switch (operation)
+        {
+            case IInvocationOperation invocation:
+                yield return NamespaceOf(invocation.TargetMethod);
+                yield break;
+
+            case IObjectCreationOperation creation when creation.Constructor is not null:
+                yield return NamespaceOf(creation.Constructor);
+                yield break;
+
+            case IPropertyReferenceOperation property:
+                yield return NamespaceOf(property.Property);
+                yield break;
+
+            case IFieldReferenceOperation field:
+                yield return NamespaceOf(field.Field);
+                yield break;
+
+            case IEventReferenceOperation eventReference:
+                yield return NamespaceOf(eventReference.Event);
+                yield break;
+
+            case IMethodReferenceOperation methodReference:
+                yield return NamespaceOf(methodReference.Method);
+                yield break;
+
+            case IVariableDeclaratorOperation variable:
+                foreach (var value in GetTypeNamespaces(variable.Symbol.Type))
+                {
+                    yield return value;
+                }
+
+                yield break;
+
+            case ITypeOfOperation typeOf:
+                foreach (var value in GetTypeNamespaces(typeOf.TypeOperand))
+                {
+                    yield return value;
+                }
+
+                yield break;
+
+            case IConversionOperation conversion when conversion.Type is not null:
+                foreach (var value in GetTypeNamespaces(conversion.Type))
+                {
+                    yield return value;
+                }
+
+                yield break;
+
+            case IIsTypeOperation isType:
+                foreach (var value in GetTypeNamespaces(isType.TypeOperand))
+                {
+                    yield return value;
+                }
+
+                yield break;
+
+            case IDeclarationPatternOperation pattern when pattern.MatchedType is not null:
+                foreach (var value in GetTypeNamespaces(pattern.MatchedType))
+                {
+                    yield return value;
+                }
+
+                yield break;
+
+            case IArrayCreationOperation arrayCreation when arrayCreation.Type is not null:
+                foreach (var value in GetTypeNamespaces(arrayCreation.Type))
+                {
+                    yield return value;
+                }
+
+                yield break;
+
+            case IDefaultValueOperation defaultValue when defaultValue.Type is not null:
+                foreach (var value in GetTypeNamespaces(defaultValue.Type))
+                {
+                    yield return value;
+                }
+
+                yield break;
+        }
+    }
+
+    private static IEnumerable<ITypeSymbol> GetDeclaredTypeDependencies(ISymbol symbol)
+    {
+        foreach (var attribute in symbol.GetAttributes())
+        {
+            if (attribute.AttributeClass is not null)
+            {
+                yield return attribute.AttributeClass;
+            }
+        }
+
+        switch (symbol)
+        {
+            case INamedTypeSymbol namedType:
+                if (namedType.BaseType is not null)
+                {
+                    yield return namedType.BaseType;
+                }
+
+                foreach (var interfaceType in namedType.Interfaces)
+                {
+                    yield return interfaceType;
+                }
+
+                foreach (var typeParameter in namedType.TypeParameters)
+                {
+                    foreach (var constraint in typeParameter.ConstraintTypes)
+                    {
+                        yield return constraint;
+                    }
+                }
+
+                break;
+
+            case IMethodSymbol method:
+                yield return method.ReturnType;
+
+                foreach (var parameter in method.Parameters)
+                {
+                    yield return parameter.Type;
+
+                    foreach (var attribute in parameter.GetAttributes())
+                    {
+                        if (attribute.AttributeClass is not null)
+                        {
+                            yield return attribute.AttributeClass;
+                        }
+                    }
+                }
+
+                foreach (var typeParameter in method.TypeParameters)
+                {
+                    foreach (var constraint in typeParameter.ConstraintTypes)
+                    {
+                        yield return constraint;
+                    }
+                }
+
+                break;
+
+            case IPropertySymbol property:
+                yield return property.Type;
+
+                foreach (var parameter in property.Parameters)
+                {
+                    yield return parameter.Type;
+                }
+
+                break;
+
+            case IFieldSymbol field:
+                yield return field.Type;
+                break;
+
+            case IEventSymbol eventSymbol:
+                yield return eventSymbol.Type;
+                break;
+        }
+    }
+
+    private static IEnumerable<string> GetTypeNamespaces(ITypeSymbol type)
+    {
+        switch (type)
+        {
+            case IArrayTypeSymbol array:
+                foreach (var value in GetTypeNamespaces(array.ElementType))
+                {
+                    yield return value;
+                }
+
+                yield break;
+
+            case IPointerTypeSymbol pointer:
+                foreach (var value in GetTypeNamespaces(pointer.PointedAtType))
+                {
+                    yield return value;
+                }
+
+                yield break;
+
+            case INamedTypeSymbol named:
+                var ownNamespace = named.ContainingNamespace?.ToDisplayString();
+                if (!string.IsNullOrWhiteSpace(ownNamespace))
+                {
+                    yield return ownNamespace!;
+                }
+
+                foreach (var argument in named.TypeArguments)
+                {
+                    foreach (var value in GetTypeNamespaces(argument))
+                    {
+                        yield return value;
+                    }
+                }
+
+                yield break;
+
+            case ITypeParameterSymbol parameter:
+                foreach (var constraint in parameter.ConstraintTypes)
+                {
+                    foreach (var value in GetTypeNamespaces(constraint))
+                    {
+                        yield return value;
+                    }
+                }
+
+                yield break;
+        }
+
+        var fallback = type.ContainingNamespace?.ToDisplayString();
+        if (!string.IsNullOrWhiteSpace(fallback))
+        {
+            yield return fallback!;
+        }
+    }
+
+    private static Diagnostic? CreateDependencyDiagnostic(
+        PolicyDocument policy,
+        string sourceNamespace,
+        string targetNamespace,
+        Location location)
+    {
+        var decision = PolicyEvaluator.EvaluateNamespace(
+            policy,
+            sourceNamespace,
+            targetNamespace);
 
         if (decision.IsAllowed)
         {
-            return;
+            return null;
         }
 
         if (decision.Reason is PolicyReasonCode.MissingScope or PolicyReasonCode.AmbiguousScope)
         {
-            const string suggestedAction = "Assign the code to one explicitly approved scope.";
+            const string suggestedAction =
+                "Assign the code to one explicitly approved scope.";
             var scopeMessage =
                 $"Source namespace '{sourceNamespace}' is not covered by exactly one policy scope. " +
                 $"Decision: DENIED; Reason: {decision.Reason}. " +
                 $"{suggestedAction} Do not modify policysharp.json automatically.";
 
-            context.ReportDiagnostic(Diagnostic.Create(
+            return Diagnostic.Create(
                 descriptor: MissingScope,
-                location: context.Operation.Syntax.GetLocation(),
+                location: location,
                 properties: CreateProperties(decision, suggestedAction),
-                messageArgs: new object[] { scopeMessage }));
-            return;
+                messageArgs: new object[] { scopeMessage });
         }
 
-        const string dependencyAction = "Use an already-approved abstraction from an allowed namespace.";
+        const string dependencyAction =
+            "Use an already-approved abstraction from an allowed namespace.";
         var message =
             $"Dependency is not allowed by the active scope. " +
             $"Scope: {decision.ScopeId ?? "<none>"}; Source: {decision.Source}; Target: {decision.Target}; " +
             $"Decision: DENIED; Reason: {decision.Reason}. " +
             $"{dependencyAction} Do not modify policysharp.json automatically.";
 
-        context.ReportDiagnostic(Diagnostic.Create(
+        return Diagnostic.Create(
             descriptor: NotAllowed,
-            location: context.Operation.Syntax.GetLocation(),
+            location: location,
             properties: CreateProperties(decision, dependencyAction),
-            messageArgs: new object[] { message }));
+            messageArgs: new object[] { message });
     }
 
-    private static ISymbol? GetReferencedSymbol(IOperation operation) =>
-        operation switch
-        {
-            IInvocationOperation invocation => invocation.TargetMethod,
-            IObjectCreationOperation creation => creation.Constructor,
-            IPropertyReferenceOperation property => property.Property,
-            IFieldReferenceOperation field => field.Field,
-            IEventReferenceOperation eventReference => eventReference.Event,
-            IMethodReferenceOperation methodReference => methodReference.Method,
-            _ => null
-        };
+    private static string NamespaceOf(ISymbol symbol) =>
+        symbol.ContainingNamespace?.ToDisplayString() ?? string.Empty;
 
     private static ImmutableDictionary<string, string?> CreateProperties(
         PolicyDecision decision,
