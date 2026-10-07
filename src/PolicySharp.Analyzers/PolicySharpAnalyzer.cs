@@ -42,12 +42,12 @@ public sealed class PolicySharpAnalyzer : DiagnosticAnalyzer
 
     private static readonly DiagnosticDescriptor MissingScope = new(
         MissingScopeDiagnosticId,
-        "Source code is not covered by a policy scope",
+        "Source code is not covered by exactly one policy scope",
         "{0}",
         "Architecture",
         DiagnosticSeverity.Error,
         isEnabledByDefault: true,
-        description: "PolicySharp fails closed when source code cannot be assigned to an explicit policy scope.");
+        description: "PolicySharp fails closed when source code cannot be assigned to exactly one explicit policy scope.");
 
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics =>
         ImmutableArray.Create(NotAllowed, InvalidPolicy, MissingPolicy, MissingScope);
@@ -68,9 +68,7 @@ public sealed class PolicySharpAnalyzer : DiagnosticAnalyzer
             if (policyFile is null)
             {
                 startContext.RegisterCompilationEndAction(endContext =>
-                    endContext.ReportDiagnostic(Diagnostic.Create(
-                        MissingPolicy,
-                        Location.None)));
+                    endContext.ReportDiagnostic(Diagnostic.Create(MissingPolicy, Location.None)));
                 return;
             }
 
@@ -106,60 +104,39 @@ public sealed class PolicySharpAnalyzer : DiagnosticAnalyzer
 
     private static void AnalyzeNode(SyntaxNodeAnalysisContext context, PolicyDocument policy)
     {
-        var sourceNamespace = context.ContainingSymbol?.ContainingNamespace?.ToDisplayString() ?? string.Empty;
-        var scope = policy.Scopes.FirstOrDefault(candidate =>
-            MatchesNamespace(sourceNamespace, candidate.Match.Namespace));
-
-        if (scope is null)
-        {
-            var message =
-                $"No policy scope matches source namespace '{sourceNamespace}'. " +
-                "Decision: DENIED; Reason: source scope is unknown or ambiguous. " +
-                "Assign the code to an explicitly approved scope. " +
-                "Do not modify policysharp.json automatically.";
-
-            context.ReportDiagnostic(Diagnostic.Create(
-                MissingScope,
-                context.Node.GetLocation(),
-                message));
-            return;
-        }
-
         var symbol = context.SemanticModel.GetSymbolInfo(context.Node, context.CancellationToken).Symbol;
         if (symbol is null)
         {
             return;
         }
 
+        var sourceNamespace = context.ContainingSymbol?.ContainingNamespace?.ToDisplayString() ?? string.Empty;
         var targetNamespace = symbol.ContainingNamespace?.ToDisplayString() ?? string.Empty;
-        if (string.IsNullOrWhiteSpace(targetNamespace))
+        var decision = PolicyEvaluator.EvaluateNamespace(policy, sourceNamespace, targetNamespace);
+
+        if (decision.IsAllowed)
         {
             return;
         }
 
-        if (MatchesAny(targetNamespace, scope.Deny.Namespaces))
+        if (decision.Reason is PolicyReasonCode.MissingScope or PolicyReasonCode.AmbiguousScope)
         {
-            Report(context, scope, sourceNamespace, targetNamespace, "target namespace is explicitly denied");
+            var scopeMessage =
+                $"Source namespace '{sourceNamespace}' is not covered by exactly one policy scope. " +
+                $"Decision: DENIED; Reason: {decision.Reason}. " +
+                "Assign the code to one explicitly approved scope. Do not modify policysharp.json automatically.";
+
+            context.ReportDiagnostic(Diagnostic.Create(
+                MissingScope,
+                context.Node.GetLocation(),
+                scopeMessage));
             return;
         }
 
-        if (!MatchesAny(targetNamespace, scope.Allow.Namespaces))
-        {
-            Report(context, scope, sourceNamespace, targetNamespace, "target namespace is not present in the scope allowlist");
-        }
-    }
-
-    private static void Report(
-        SyntaxNodeAnalysisContext context,
-        PolicyScope scope,
-        string sourceNamespace,
-        string targetNamespace,
-        string reason)
-    {
         var message =
             $"Dependency is not allowed by the active scope. " +
-            $"Scope: {scope.Id}; Source: {sourceNamespace}; Target: {targetNamespace}; " +
-            $"Decision: DENIED; Reason: {reason}. " +
+            $"Scope: {decision.ScopeId ?? "<none>"}; Source: {decision.Source}; Target: {decision.Target}; " +
+            $"Decision: DENIED; Reason: {decision.Reason}. " +
             "Use an already-approved abstraction from an allowed namespace. " +
             "Do not modify policysharp.json automatically.";
 
@@ -167,23 +144,5 @@ public sealed class PolicySharpAnalyzer : DiagnosticAnalyzer
             NotAllowed,
             context.Node.GetLocation(),
             message));
-    }
-
-    private static bool MatchesAny(string actual, IReadOnlyList<string> patterns) =>
-        patterns.Any(pattern => MatchesNamespace(actual, pattern));
-
-    private static bool MatchesNamespace(string actual, string pattern)
-    {
-        if (string.IsNullOrWhiteSpace(pattern))
-        {
-            return false;
-        }
-
-        var normalized = pattern.EndsWith(".**", StringComparison.Ordinal)
-            ? pattern.Substring(0, pattern.Length - 3)
-            : pattern;
-
-        return string.Equals(actual, normalized, StringComparison.Ordinal) ||
-            actual.StartsWith(normalized + ".", StringComparison.Ordinal);
     }
 }
