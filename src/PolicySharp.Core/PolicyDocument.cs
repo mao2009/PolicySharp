@@ -24,20 +24,54 @@ public sealed class PolicyDocument
         var document = JsonSerializer.Deserialize<PolicyDocument>(json, SerializerOptions)
             ?? throw new JsonException("Policy document was empty.");
 
-        if (document.Version != 1)
+        document.Validate();
+        return document;
+    }
+
+    public void Validate()
+    {
+        if (Version != 1)
         {
-            throw new JsonException($"Unsupported PolicySharp policy version: {document.Version}.");
+            throw new JsonException($"Unsupported PolicySharp policy version: {Version}.");
         }
 
-        if (!string.Equals(document.Mode, "default-deny", StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(Mode, "default-deny", StringComparison.OrdinalIgnoreCase))
         {
             throw new JsonException("PolicySharp v1 only supports mode 'default-deny'.");
         }
 
-        return document;
+        if (Scopes is null)
+        {
+            throw new JsonException("Property 'scopes' is required.");
+        }
+
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+        for (var index = 0; index < Scopes.Count; index++)
+        {
+            var scope = Scopes[index]
+                ?? throw new JsonException($"Scope at index {index} must not be null.");
+
+            if (string.IsNullOrWhiteSpace(scope.Id))
+            {
+                throw new JsonException($"Scope at index {index} must have a non-empty 'id'.");
+            }
+
+            if (!ids.Add(scope.Id))
+            {
+                throw new JsonException($"Duplicate scope id '{scope.Id}'.");
+            }
+
+            if (scope.Match is null || string.IsNullOrWhiteSpace(scope.Match.Namespace))
+            {
+                throw new JsonException($"Scope '{scope.Id}' must define match.namespace.");
+            }
+
+            scope.Allow ??= new PolicyAccess();
+            scope.Deny ??= new PolicyAccess();
+        }
     }
 
-    private static readonly JsonSerializerOptions SerializerOptions = new JsonSerializerOptions
+    private static readonly JsonSerializerOptions SerializerOptions = new()
     {
         PropertyNameCaseInsensitive = true,
         ReadCommentHandling = JsonCommentHandling.Skip,
@@ -51,13 +85,13 @@ public sealed class PolicyScope
     public string Id { get; set; } = string.Empty;
 
     [JsonPropertyName("match")]
-    public PolicyMatch Match { get; set; } = new PolicyMatch();
+    public PolicyMatch Match { get; set; } = new();
 
     [JsonPropertyName("allow")]
-    public PolicyAccess Allow { get; set; } = new PolicyAccess();
+    public PolicyAccess Allow { get; set; } = new();
 
     [JsonPropertyName("deny")]
-    public PolicyAccess Deny { get; set; } = new PolicyAccess();
+    public PolicyAccess Deny { get; set; } = new();
 }
 
 public sealed class PolicyMatch
