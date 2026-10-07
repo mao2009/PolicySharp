@@ -25,18 +25,13 @@
     <None Include="buildTransitive/PolicySharp.Analyzers.props"
           Pack="true"
           PackagePath="buildTransitive/PolicySharp.Analyzers.props" />
+    <None Include="$(OutputPath)PolicySharp.Analyzers.dll"
+          Pack="true"
+          PackagePath="analyzers/dotnet/cs"
+          Visible="false" />
+    <None Include="$(OutputPath)PolicySharp.Core.dll"
+          Pack="true"
+          PackagePath="analyzers/dotnet/cs"
+          Visible="false" />
   </ItemGroup>
-
-  <Target Name="AddAnalyzerAssembliesToPackage" BeforeTargets="GenerateNuspec">
-    <ItemGroup>
-      <None Include="$(TargetDir)PolicySharp.Analyzers.dll"
-            Pack="true"
-            PackagePath="analyzers/dotnet/cs"
-            Visible="false" />
-      <None Include="$(TargetDir)PolicySharp.Core.dll"
-            Pack="true"
-            PackagePath="analyzers/dotnet/cs"
-            Visible="false" />
-    </ItemGroup>
-  </Target>
 </Project>
