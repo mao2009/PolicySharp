@@ -113,6 +113,104 @@ public sealed class PatchGateTests
     }
 
     [Fact]
+    public async Task WriteAllowlist_AllowsMatchingPath()
+    {
+        await using var repository = await TestRepository.CreateAsync();
+        await repository.SetPolicyAsync(
+            """{"version":1,"mode":"default-deny","scopes":[],"writes":{"allow":["src/**"],"deny":[]}}""" + "\n");
+        var patch = await repository.CreatePatchAsync(
+            "src/allowed/file.txt",
+            "after\n");
+
+        var report = await CreateGate(repository)
+            .ExecuteAsync(new GateRequest(patch, repository.InputPath));
+
+        Assert.Equal("ALLOW", report.Decision);
+        Assert.Equal(
+            "after\n",
+            await File.ReadAllTextAsync(Path.Combine(repository.Root, "src", "allowed", "file.txt")));
+    }
+
+    [Fact]
+    public async Task WriteAllowlist_DeniesUnlistedPath()
+    {
+        await using var repository = await TestRepository.CreateAsync();
+        await repository.SetPolicyAsync(
+            """{"version":1,"mode":"default-deny","scopes":[],"writes":{"allow":["src/**"],"deny":[]}}""" + "\n");
+        var patch = await repository.CreatePatchAsync("src.txt", "after\n");
+
+        var report = await CreateGate(repository)
+            .ExecuteAsync(new GateRequest(patch, repository.InputPath));
+
+        Assert.Equal("DENY", report.Decision);
+        Assert.Equal("WritePathDenied", report.Reason);
+        Assert.Contains(
+            report.Violations,
+            violation => violation.Id == "PSHARPGATE0200" &&
+                         violation.Location == "src.txt");
+        Assert.True(await repository.IsCleanAsync());
+    }
+
+    [Fact]
+    public async Task AddedPath_IsEvaluated()
+    {
+        await using var repository = await TestRepository.CreateAsync();
+        await repository.SetPolicyAsync(
+            """{"version":1,"mode":"default-deny","scopes":[],"writes":{"allow":["src/**"],"deny":[]}}""" + "\n");
+        var patch = await repository.CreateAddedFilePatchAsync(
+            "src/allowed/new.txt",
+            "new\n");
+
+        var report = await CreateGate(repository)
+            .ExecuteAsync(new GateRequest(patch, repository.InputPath));
+
+        Assert.Equal("ALLOW", report.Decision);
+        Assert.True(File.Exists(Path.Combine(repository.Root, "src", "allowed", "new.txt")));
+    }
+
+    [Fact]
+    public async Task DeletedPath_IsEvaluated()
+    {
+        await using var repository = await TestRepository.CreateAsync();
+        await repository.SetPolicyAsync(
+            """{"version":1,"mode":"default-deny","scopes":[],"writes":{"allow":["src/**"],"deny":[]}}""" + "\n");
+        var patch = await repository.CreateDeletePatchAsync("infra/delete.txt");
+
+        var report = await CreateGate(repository)
+            .ExecuteAsync(new GateRequest(patch, repository.InputPath));
+
+        Assert.Equal("DENY", report.Decision);
+        Assert.Equal("WritePathDenied", report.Reason);
+        Assert.Contains(
+            report.Violations,
+            violation => violation.Location == "infra/delete.txt");
+        Assert.True(await repository.IsCleanAsync());
+    }
+
+    [Fact]
+    public async Task RenameChecksBothOldAndNewPaths()
+    {
+        await using var repository = await TestRepository.CreateAsync();
+        await repository.SetPolicyAsync(
+            """{"version":1,"mode":"default-deny","scopes":[],"writes":{"allow":["src/**"],"deny":[]}}""" + "\n");
+        var patch = await repository.CreateRenamePatchAsync(
+            "legacy/file.txt",
+            "src/allowed/renamed.txt");
+
+        var report = await CreateGate(repository)
+            .ExecuteAsync(new GateRequest(patch, repository.InputPath));
+
+        Assert.Equal("DENY", report.Decision);
+        Assert.Equal("WritePathDenied", report.Reason);
+        Assert.Contains("legacy/file.txt", report.AffectedFiles);
+        Assert.Contains("src/allowed/renamed.txt", report.AffectedFiles);
+        Assert.Contains(
+            report.Violations,
+            violation => violation.Location == "legacy/file.txt");
+        Assert.True(await repository.IsCleanAsync());
+    }
+
+    [Fact]
     public async Task InvalidPatch_IsRejectedWithoutMutation()
     {
         await using var repository = await TestRepository.CreateAsync();
@@ -195,11 +293,23 @@ public sealed class PatchGateTests
                 $"policysharp-gate-test-{Guid.NewGuid():N}");
             Directory.CreateDirectory(root);
             Directory.CreateDirectory(Path.Combine(root, ".policysharp"));
+            Directory.CreateDirectory(Path.Combine(root, "src", "allowed"));
+            Directory.CreateDirectory(Path.Combine(root, "legacy"));
+            Directory.CreateDirectory(Path.Combine(root, "infra"));
 
             var repository = new TestRepository(root);
 
             await File.WriteAllTextAsync(repository.InputPath, "test solution\n");
             await File.WriteAllTextAsync(repository.SourcePath, "before\n");
+            await File.WriteAllTextAsync(
+                Path.Combine(root, "src", "allowed", "file.txt"),
+                "before\n");
+            await File.WriteAllTextAsync(
+                Path.Combine(root, "legacy", "file.txt"),
+                "legacy\n");
+            await File.WriteAllTextAsync(
+                Path.Combine(root, "infra", "delete.txt"),
+                "delete\n");
             await File.WriteAllTextAsync(
                 Path.Combine(root, "Directory.Build.targets"),
                 "<Project />\n");
@@ -259,6 +369,93 @@ public sealed class PatchGateTests
             _externalFiles.Add(patch);
 
             await GitAsync("checkout", "--", relativePath);
+            return patch;
+        }
+
+        public async Task SetPolicyAsync(string json)
+        {
+            await File.WriteAllTextAsync(PolicyPath, json);
+            await GitAsync("add", "policysharp.json");
+            await GitAsync("commit", "-m", "set write policy");
+        }
+
+        public async Task<string> CreateAddedFilePatchAsync(
+            string relativePath,
+            string content)
+        {
+            var fullPath = Path.Combine(
+                Root,
+                relativePath.Replace('/', Path.DirectorySeparatorChar));
+            Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
+            await File.WriteAllTextAsync(fullPath, content);
+            await GitAsync("add", "--", relativePath);
+
+            var diff = await GitResultAsync(
+                "diff",
+                "--cached",
+                "--binary",
+                "HEAD",
+                "--",
+                relativePath);
+            Assert.True(diff.Succeeded, diff.StandardError);
+            Assert.False(string.IsNullOrWhiteSpace(diff.StandardOutput));
+
+            var patch = await SavePatchAsync(diff.StandardOutput);
+            await GitAsync("reset", "--hard", "HEAD");
+            return patch;
+        }
+
+        public async Task<string> CreateDeletePatchAsync(string relativePath)
+        {
+            var fullPath = Path.Combine(
+                Root,
+                relativePath.Replace('/', Path.DirectorySeparatorChar));
+            File.Delete(fullPath);
+
+            var diff = await GitResultAsync(
+                "diff",
+                "--binary",
+                "--",
+                relativePath);
+            Assert.True(diff.Succeeded, diff.StandardError);
+            Assert.False(string.IsNullOrWhiteSpace(diff.StandardOutput));
+
+            var patch = await SavePatchAsync(diff.StandardOutput);
+            await GitAsync("checkout", "--", relativePath);
+            return patch;
+        }
+
+        public async Task<string> CreateRenamePatchAsync(
+            string oldRelativePath,
+            string newRelativePath)
+        {
+            var newFullPath = Path.Combine(
+                Root,
+                newRelativePath.Replace('/', Path.DirectorySeparatorChar));
+            Directory.CreateDirectory(Path.GetDirectoryName(newFullPath)!);
+
+            await GitAsync("mv", oldRelativePath, newRelativePath);
+            var diff = await GitResultAsync(
+                "diff",
+                "--cached",
+                "--binary",
+                "--find-renames",
+                "HEAD");
+            Assert.True(diff.Succeeded, diff.StandardError);
+            Assert.False(string.IsNullOrWhiteSpace(diff.StandardOutput));
+
+            var patch = await SavePatchAsync(diff.StandardOutput);
+            await GitAsync("reset", "--hard", "HEAD");
+            return patch;
+        }
+
+        private async Task<string> SavePatchAsync(string content)
+        {
+            var patch = Path.Combine(
+                Path.GetTempPath(),
+                $"policysharp-gate-test-{Guid.NewGuid():N}.patch");
+            await File.WriteAllTextAsync(patch, content);
+            _externalFiles.Add(patch);
             return patch;
         }
 
