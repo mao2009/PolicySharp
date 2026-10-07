@@ -2,11 +2,13 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PolicySharp.Core", "src\\PolicySharp.Core\\PolicySharp.Core.csproj", "{A5F39C31-B885-49F8-9487-C92779971501}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PolicySharp.Core", "src\PolicySharp.Core\PolicySharp.Core.csproj", "{A5F39C31-B885-49F8-9487-C92779971501}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PolicySharp.Analyzers", "src\\PolicySharp.Analyzers\\PolicySharp.Analyzers.csproj", "{9D4D4F55-A03D-43D0-8F45-13055771EEB2}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PolicySharp.Analyzers", "src\PolicySharp.Analyzers\PolicySharp.Analyzers.csproj", "{9D4D4F55-A03D-43D0-8F45-13055771EEB2}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PolicySharp.Tests", "tests\\PolicySharp.Tests\\PolicySharp.Tests.csproj", "{8E6AD5C4-CDE6-46F0-9B0A-7E71B3B1B99F}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PolicySharp.Cli", "src\PolicySharp.Cli\PolicySharp.Cli.csproj", "{D649E9D0-19A8-4A23-B38C-0CA4F4439E11}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PolicySharp.Tests", "tests\PolicySharp.Tests\PolicySharp.Tests.csproj", "{8E6AD5C4-CDE6-46F0-9B0A-7E71B3B1B99F}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -22,6 +24,10 @@ Global
 		{9D4D4F55-A03D-43D0-8F45-13055771EEB2}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{9D4D4F55-A03D-43D0-8F45-13055771EEB2}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{9D4D4F55-A03D-43D0-8F45-13055771EEB2}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D649E9D0-19A8-4A23-B38C-0CA4F4439E11}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D649E9D0-19A8-4A23-B38C-0CA4F4439E11}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D649E9D0-19A8-4A23-B38C-0CA4F4439E11}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D649E9D0-19A8-4A23-B38C-0CA4F4439E11}.Release|Any CPU.Build.0 = Release|Any CPU
 		{8E6AD5C4-CDE6-46F0-9B0A-7E71B3B1B99F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{8E6AD5C4-CDE6-46F0-9B0A-7E71B3B1B99F}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{8E6AD5C4-CDE6-46F0-9B0A-7E71B3B1B99F}.Release|Any CPU.ActiveCfg = Release|Any CPU
