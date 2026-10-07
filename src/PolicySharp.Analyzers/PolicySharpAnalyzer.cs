@@ -13,7 +13,7 @@ public sealed class PolicySharpAnalyzer : DiagnosticAnalyzer
     public const string MissingPolicyDiagnosticId = "PSHARP0002";
     public const string MissingScopeDiagnosticId = "PSHARP2002";
 
-    private static readonly DiagnosticDescriptor NotAllowed = new DiagnosticDescriptor(
+    private static readonly DiagnosticDescriptor NotAllowed = new(
         NotAllowedDiagnosticId,
         "Dependency is not allowed by policy",
         "{0}",
@@ -22,23 +22,25 @@ public sealed class PolicySharpAnalyzer : DiagnosticAnalyzer
         isEnabledByDefault: true,
         description: "PolicySharp uses default-deny semantics. Dependencies must be explicitly allowed.");
 
-    private static readonly DiagnosticDescriptor InvalidPolicy = new DiagnosticDescriptor(
+    private static readonly DiagnosticDescriptor InvalidPolicy = new(
         InvalidPolicyDiagnosticId,
         "Invalid PolicySharp policy",
         "PolicySharp could not load policysharp.json: {0}",
         "Configuration",
         DiagnosticSeverity.Error,
-        isEnabledByDefault: true);
+        isEnabledByDefault: true,
+        customTags: new[] { WellKnownDiagnosticTags.CompilationEnd });
 
-    private static readonly DiagnosticDescriptor MissingPolicy = new DiagnosticDescriptor(
+    private static readonly DiagnosticDescriptor MissingPolicy = new(
         MissingPolicyDiagnosticId,
         "PolicySharp policy is required",
         "policysharp.json is required. PolicySharp fails closed when no policy is available.",
         "Configuration",
         DiagnosticSeverity.Error,
-        isEnabledByDefault: true);
+        isEnabledByDefault: true,
+        customTags: new[] { WellKnownDiagnosticTags.CompilationEnd });
 
-    private static readonly DiagnosticDescriptor MissingScope = new DiagnosticDescriptor(
+    private static readonly DiagnosticDescriptor MissingScope = new(
         MissingScopeDiagnosticId,
         "Source code is not covered by a policy scope",
         "{0}",
@@ -81,7 +83,7 @@ public sealed class PolicySharpAnalyzer : DiagnosticAnalyzer
                     throw new InvalidOperationException("policysharp.json is empty.");
                 }
 
-                policy = PolicyDocument.Parse(text);
+                policy = PolicyDocument.Parse(text!);
             }
             catch (Exception exception)
             {
