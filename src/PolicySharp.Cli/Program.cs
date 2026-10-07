@@ -33,10 +33,8 @@ internal static class Program
         }
 
         Console.Error.WriteLine(
-            "Usage:
-" +
-            "  policysharp check <solution.sln|project.csproj>
-" +
+            "Usage:\n" +
+            "  policysharp check <solution.sln|project.csproj>\n" +
             "  policysharp gate apply <patch-file> <solution.sln|project.csproj>");
         return UsageErrorExitCode;
     }
