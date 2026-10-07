@@ -6,20 +6,38 @@ namespace PolicySharp.Core;
 public sealed class PolicyDocument
 {
     [JsonPropertyName("version")]
-    public int Version { get; init; } = 1;
+    public int Version { get; set; } = 1;
 
-    [JsonPropertyName("rules")]
-    public IReadOnlyList<PolicyRule> Rules { get; init; } = Array.Empty<PolicyRule>();
+    [JsonPropertyName("mode")]
+    public string Mode { get; set; } = "default-deny";
+
+    [JsonPropertyName("scopes")]
+    public IReadOnlyList<PolicyScope> Scopes { get; set; } = Array.Empty<PolicyScope>();
 
     public static PolicyDocument Parse(string json)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(json);
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            throw new ArgumentException("Policy JSON must not be empty.", nameof(json));
+        }
 
-        return JsonSerializer.Deserialize<PolicyDocument>(json, SerializerOptions)
+        var document = JsonSerializer.Deserialize<PolicyDocument>(json, SerializerOptions)
             ?? throw new JsonException("Policy document was empty.");
+
+        if (document.Version != 1)
+        {
+            throw new JsonException($"Unsupported PolicySharp policy version: {document.Version}.");
+        }
+
+        if (!string.Equals(document.Mode, "default-deny", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new JsonException("PolicySharp v1 only supports mode 'default-deny'.");
+        }
+
+        return document;
     }
 
-    private static readonly JsonSerializerOptions SerializerOptions = new()
+    private static readonly JsonSerializerOptions SerializerOptions = new JsonSerializerOptions
     {
         PropertyNameCaseInsensitive = true,
         ReadCommentHandling = JsonCommentHandling.Skip,
@@ -27,23 +45,35 @@ public sealed class PolicyDocument
     };
 }
 
-public sealed class PolicyRule
+public sealed class PolicyScope
 {
     [JsonPropertyName("id")]
-    public string Id { get; init; } = string.Empty;
+    public string Id { get; set; } = string.Empty;
 
-    [JsonPropertyName("kind")]
-    public string Kind { get; init; } = string.Empty;
+    [JsonPropertyName("match")]
+    public PolicyMatch Match { get; set; } = new PolicyMatch();
 
-    [JsonPropertyName("symbol")]
-    public string? Symbol { get; init; }
+    [JsonPropertyName("allow")]
+    public PolicyAccess Allow { get; set; } = new PolicyAccess();
 
-    [JsonPropertyName("from")]
-    public string? From { get; init; }
+    [JsonPropertyName("deny")]
+    public PolicyAccess Deny { get; set; } = new PolicyAccess();
+}
 
-    [JsonPropertyName("target")]
-    public string? Target { get; init; }
+public sealed class PolicyMatch
+{
+    [JsonPropertyName("namespace")]
+    public string Namespace { get; set; } = string.Empty;
+}
 
-    [JsonPropertyName("message")]
-    public string? Message { get; init; }
+public sealed class PolicyAccess
+{
+    [JsonPropertyName("namespaces")]
+    public IReadOnlyList<string> Namespaces { get; set; } = Array.Empty<string>();
+
+    [JsonPropertyName("capabilities")]
+    public IReadOnlyList<string> Capabilities { get; set; } = Array.Empty<string>();
+
+    [JsonPropertyName("symbols")]
+    public IReadOnlyList<string> Symbols { get; set; } = Array.Empty<string>();
 }
