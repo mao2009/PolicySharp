@@ -100,7 +100,7 @@ Directory.Build.props
 *.csproj
 ```
 
-The analyzer enforces code semantics; repository/agent tooling enforces who may change the policy.
+The analyzer enforces code semantics; repository/agent tooling enforces who may change the policy. The transactional Agent Gate validates proposed patches in an isolated Git worktree. Host-native validation is the default, while Docker/Podman remain optional explicit isolation backends.
 
 ## Initial architecture
 

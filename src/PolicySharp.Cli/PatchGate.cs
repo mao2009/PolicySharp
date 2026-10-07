@@ -83,7 +83,7 @@ public sealed class PatchGate
     private readonly IProcessRunner _processRunner;
     private readonly Func<string, CancellationToken, Task<PolicyCheckResult>>? _policyChecker;
     private readonly Func<string, CancellationToken, Task<ProcessResult>>? _builder;
-    private readonly ContainerSandboxValidator? _sandboxValidator;
+    private readonly ISandboxValidator? _sandboxValidator;
     private readonly Func<CancellationToken, Task>? _beforeFinalApply;
 
     public PatchGate(
@@ -101,7 +101,7 @@ public sealed class PatchGate
 
     private PatchGate(
         IProcessRunner processRunner,
-        ContainerSandboxValidator sandboxValidator)
+        ISandboxValidator sandboxValidator)
     {
         _processRunner = processRunner;
         _sandboxValidator = sandboxValidator;
@@ -110,12 +110,20 @@ public sealed class PatchGate
         _beforeFinalApply = null;
     }
 
-    public static PatchGate CreateDefault()
+    public static PatchGate CreateDefault(string sandboxBackend = "host")
     {
         var runner = new ProcessRunner();
-        return new PatchGate(
-            runner,
-            new ContainerSandboxValidator(runner));
+        ISandboxValidator validator = sandboxBackend.ToLowerInvariant() switch
+        {
+            "host" => new HostSandboxValidator(runner),
+            "docker" => new ContainerSandboxValidator(runner, requestedBackend: "docker"),
+            "podman" => new ContainerSandboxValidator(runner, requestedBackend: "podman"),
+            _ => throw new ArgumentException(
+                "Sandbox backend must be one of: host, docker, podman.",
+                nameof(sandboxBackend))
+        };
+
+        return new PatchGate(runner, validator);
     }
 
     public async Task<GateReport> ExecuteAsync(

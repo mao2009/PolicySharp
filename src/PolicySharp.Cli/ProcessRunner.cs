@@ -18,6 +18,14 @@ public interface IProcessRunner
 
 public sealed class ProcessRunner : IProcessRunner
 {
+    private static readonly TimeSpan DefaultTimeout = TimeSpan.FromMinutes(10);
+    private readonly TimeSpan _timeout;
+
+    public ProcessRunner(TimeSpan? timeout = null)
+    {
+        _timeout = timeout ?? DefaultTimeout;
+    }
+
     public async Task<ProcessResult> RunAsync(
         string fileName,
         IReadOnlyList<string> arguments,
@@ -33,6 +41,11 @@ public sealed class ProcessRunner : IProcessRunner
             UseShellExecute = false,
             CreateNoWindow = true
         };
+
+        // Keep the child environment deterministic where practical without removing
+        // credentials/toolchain variables required by ordinary host builds.
+        startInfo.Environment["DOTNET_SKIP_FIRST_TIME_EXPERIENCE"] = "1";
+        startInfo.Environment["DOTNET_NOLOGO"] = "1";
 
         foreach (var argument in arguments)
         {
@@ -52,13 +65,53 @@ public sealed class ProcessRunner : IProcessRunner
             return new ProcessResult(-1, string.Empty, exception.Message);
         }
 
-        var stdoutTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
-        var stderrTask = process.StandardError.ReadToEndAsync(cancellationToken);
+        using var timeoutSource = new CancellationTokenSource(_timeout);
+        using var linkedSource = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken,
+            timeoutSource.Token);
 
-        await process.WaitForExitAsync(cancellationToken);
+        var stdoutTask = process.StandardOutput.ReadToEndAsync();
+        var stderrTask = process.StandardError.ReadToEndAsync();
+
+        try
+        {
+            await process.WaitForExitAsync(linkedSource.Token);
+        }
+        catch (OperationCanceledException) when (timeoutSource.IsCancellationRequested &&
+                                                  !cancellationToken.IsCancellationRequested)
+        {
+            KillProcessTree(process);
+            await process.WaitForExitAsync(CancellationToken.None);
+            return new ProcessResult(
+                -2,
+                await stdoutTask,
+                $"Process '{fileName}' timed out after {_timeout}." +
+                Environment.NewLine + await stderrTask);
+        }
+        catch (OperationCanceledException)
+        {
+            KillProcessTree(process);
+            throw;
+        }
+
         return new ProcessResult(
             process.ExitCode,
             await stdoutTask,
             await stderrTask);
+    }
+
+    private static void KillProcessTree(Process process)
+    {
+        try
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+            }
+        }
+        catch
+        {
+            // Best effort: cancellation/timeout must not mutate the trusted worktree.
+        }
     }
 }
