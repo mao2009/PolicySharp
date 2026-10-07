@@ -1,4 +1,5 @@
 using PolicySharp.Core;
+using Xunit;
 
 namespace PolicySharp.Tests;
 
