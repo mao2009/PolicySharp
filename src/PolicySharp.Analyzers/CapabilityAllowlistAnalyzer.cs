@@ -40,7 +40,7 @@ public sealed class CapabilityAllowlistAnalyzer : DiagnosticAnalyzer
 
         context.RegisterCompilationStartAction(startContext =>
         {
-            var resolution = AnalyzerPolicySourceResolver.Resolve(startContext);
+            var resolution = AnalyzerPolicySourceResolver.Resolve(startContext.Options, startContext.CancellationToken);
             if (!resolution.IsSuccess || resolution.Document is null)
             {
                 // PolicySharpAnalyzer owns policy configuration diagnostics.
