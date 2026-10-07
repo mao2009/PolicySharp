@@ -43,7 +43,7 @@ Use the gate when an AI agent should not write directly into the trusted working
 policysharp gate apply proposed.patch MySolution.sln
 ```
 
-The gate validates the patch in an isolated Git worktree, runs PolicySharp and `dotnet build`, rechecks the repository state, and only then applies the exact validated patch.
+The gate validates the patch in an isolated Git worktree, runs PolicySharp and `dotnet build`, rechecks the repository state, and only then applies the exact validated patch. `host` is the default backend; `docker` and `podman` are explicit optional backends and never silently fall back to host.
 
 A protected policy/enforcement change requires approval supplied outside the patch:
 
