@@ -2,11 +2,12 @@ name: Policy integrity
 
 on:
   pull_request:
-    branches: [ main ]
-    types: [opened, synchronize, reopened, labeled, unlabeled]
+    branches: [main]
+    types: [opened, synchronize, reopened, labeled, unlabeled, submitted]
 
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
   trust-boundary:
@@ -15,10 +16,35 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
+      - name: Check independent policy approval
+        id: approval
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          POLICY_APPROVED: ${{ contains(github.event.pull_request.labels.*.name, 'policy-approved') }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          independent=false
+          if [[ "$POLICY_APPROVED" == "true" ]]; then
+            reviews="$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/reviews")"
+            while IFS= read -r reviewer; do
+              [[ -n "$reviewer" ]] || continue
+              permission="$(gh api "repos/$GITHUB_REPOSITORY/collaborators/$reviewer/permission" --jq .permission 2>/dev/null || true)"
+              case "$permission" in
+                write|maintain|admin) independent=true; break ;;
+              esac
+            done < <(printf '%s\n' "$reviews" | jq -r \
+              --arg author "$PR_AUTHOR" --arg head "$PR_HEAD_SHA" \
+              '.[] | select(.state == "APPROVED" and .commit_id == $head and .user.login != $author) | .user.login')
+          fi
+          echo "independent_approved=$independent" >> "$GITHUB_OUTPUT"
       - name: Check protected policy files
         env:
           POLICY_APPROVED: ${{ contains(github.event.pull_request.labels.*.name, 'policy-approved') }}
+          POLICY_INDEPENDENT_APPROVED: ${{ steps.approval.outputs.independent_approved }}
         run: |
           chmod +x scripts/check-policy-trust-boundary.sh
           scripts/check-policy-trust-boundary.sh "origin/${{ github.base_ref }}" HEAD
