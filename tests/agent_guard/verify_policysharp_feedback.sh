@@ -22,7 +22,10 @@ version="${version%.nupkg}"
 
 cat >"$work/consumer/Consumer.csproj" <<EOF
 <Project Sdk="Microsoft.NET.Sdk">
-<PropertyGroup><TargetFramework>net8.0</TargetFramework></PropertyGroup>
+<PropertyGroup><TargetFramework>net8.0</TargetFramework>
+<GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+<GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
+</PropertyGroup>
 <ItemGroup><PackageReference Include="loach.PolicySharp.Analyzers" Version="$version" /></ItemGroup>
 </Project>
 EOF
