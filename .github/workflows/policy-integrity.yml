@@ -1,7 +1,9 @@
 name: Policy integrity
 
+# This workflow intentionally runs ONLY trusted base-branch code. It reads
+# candidate PR diff metadata, but NEVER checks out or executes PR scripts.
 on:
-  pull_request:
+  pull_request_target:
     branches: [main]
     types: [opened, synchronize, reopened, labeled, unlabeled]
 
@@ -13,10 +15,19 @@ jobs:
   trust-boundary:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout protected base
+        uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.pull_request.base.sha }}
           fetch-depth: 0
-      - name: Check independent policy approval
+          persist-credentials: false
+      - name: Fetch untrusted PR commit as data only
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          git -c protocol.version=2 fetch --no-tags origin \
+            "+refs/pull/$PR_NUMBER/head:refs/remotes/pr-head"
+      - name: Verify independent approval on latest head
         id: approval
         env:
           GH_TOKEN: ${{ github.token }}
@@ -41,10 +52,9 @@ jobs:
               '.[] | select(.state == "APPROVED" and .commit_id == $head and .user.login != $author) | .user.login')
           fi
           echo "independent_approved=$independent" >> "$GITHUB_OUTPUT"
-      - name: Check protected policy files
+      - name: Check protected file diff using base-side validator
         env:
           POLICY_APPROVED: ${{ contains(github.event.pull_request.labels.*.name, 'policy-approved') }}
           POLICY_INDEPENDENT_APPROVED: ${{ steps.approval.outputs.independent_approved }}
         run: |
-          chmod +x scripts/check-policy-trust-boundary.sh
-          scripts/check-policy-trust-boundary.sh "origin/${{ github.base_ref }}" HEAD
+          bash scripts/check-policy-trust-boundary.sh HEAD refs/remotes/pr-head
