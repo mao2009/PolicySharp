@@ -8,7 +8,7 @@ mkdir -p "$work/packages" "$work/consumer"
 
 dotnet restore "$repo_root/PolicySharp.sln"
 dotnet build "$repo_root/PolicySharp.sln" --no-restore
-dotnet pack "$repo_root/src/PolicySharp.Analyzers/PolicySharp.Analyzers.csproj" --no-build \
+dotnet pack "$repo_root/src/PolicySharp.Analyzers/PolicySharp.Analyzers.csproj" --configuration Debug --no-build \
   --output "$work/packages"
 cli="$repo_root/src/PolicySharp.Cli/bin/Debug/net8.0/PolicySharp.Cli.dll"
 [[ -f "$cli" ]] || { echo "Expected PolicySharp CLI DLL not found: $cli" >&2; exit 2; }
