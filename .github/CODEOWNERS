@@ -1,0 +1,16 @@
+# Policy and analyzer enforcement surfaces.
+# NOTE: @mao2009 cannot independently approve their own PR.
+# Configure "Require review from Code Owners" and a separate maintainer for independence.
+/.github/workflows/ @mao2009
+/.github/CODEOWNERS @mao2009
+/.policysharp/ @mao2009
+/src/PolicySharp.Analyzers/ @mao2009
+/src/PolicySharp.Core/ @mao2009
+/src/PolicySharp.Cli/ @mao2009
+/scripts/ @mao2009
+/tests/agent_guard/ @mao2009
+/Directory.Build.* @mao2009
+/Directory.Packages.props @mao2009
+/NuGet.config @mao2009
+/global.json @mao2009
+/policysharp.json @mao2009
