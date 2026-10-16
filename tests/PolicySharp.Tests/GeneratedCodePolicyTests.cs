@@ -97,7 +97,7 @@ public sealed class GeneratedCodePolicyTests
 
     [Theory]
     [InlineData(
-        "[assembly: System.Runtime.Versioning.TargetFrameworkAttribute(\".NETCoreApp,Version=v8.0\")]",
+        "[assembly: System.Runtime.Versioning.TargetFrameworkAttribute(\".NETCoreApp,Version=v8.0\", FrameworkDisplayName = \".NET 8.0\")]",
         "/repo/obj/Debug/net8.0/.NETCoreApp,Version=v8.0.AssemblyAttributes.cs")]
     [InlineData(
         "[assembly: System.Reflection.AssemblyCompanyAttribute(\"Example\")]",
