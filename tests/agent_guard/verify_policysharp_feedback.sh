@@ -85,7 +85,15 @@ public static class Example
     public static int Identity(int value) => value;
 }
 EOF
+set +e
 run_feedback
+green=$?
+set -e
+if [[ $green -ne 0 ]]; then
+  cat "$work/result.json"
+  echo "Expected valid PolicySharp source to pass the strict gate (exit $green)" >&2
+  exit 1
+fi
 python - "$work/result.json" <<'PY'
 import json,sys
 x=json.load(open(sys.argv[1]))
