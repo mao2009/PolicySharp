@@ -1,0 +1,19 @@
+name: SDK assembly metadata regression
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sdk-metadata-consumer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Real packaged consumer with normal SDK assembly metadata
+        run: bash tests/agent_guard/verify_sdk_metadata.sh
