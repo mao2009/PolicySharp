@@ -33,10 +33,13 @@ fi
 printf 'Protected PolicySharp files changed:\n' >&2
 printf ' - %s\n' "${violations[@]}" >&2
 
-if [[ "${POLICY_APPROVED:-false}" == "true" ]]; then
-  echo "Protected changes explicitly approved."
+if [[ "${POLICY_APPROVED:-false}" == "true" &&
+      "${POLICY_INDEPENDENT_APPROVED:-false}" == "true" ]]; then
+  echo "Protected changes approved by an independent, authorized reviewer."
   exit 0
 fi
 
-echo "Policy approval is required. Apply the 'policy-approved' PR label after human review." >&2
+echo "Protected changes require the 'policy-approved' label AND an independent" >&2
+echo "authorized reviewer approval on the current PR head commit." >&2
+echo "Owner self-approval or a label alone must not bypass this boundary." >&2
 exit 1
