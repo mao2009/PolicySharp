@@ -19,6 +19,11 @@ global.json
 .gitmodules
 schema/policysharp.schema.json
 .github/workflows/**
+.github/CODEOWNERS
+scripts/strict_diagnostic_audit.py
+scripts/analyzer_participation.py
+scripts/agent_diagnostic_feedback.py
+tests/agent_guard/**
 .policysharp/protected-paths.txt
 scripts/check-policy-trust-boundary.sh
 src/PolicySharp.Core/**
