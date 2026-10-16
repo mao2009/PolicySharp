@@ -8,7 +8,7 @@ This opt-in helper is a thin orchestrator for **existing** PolicySharp CLI `chec
 
 ```bash
 # Run inside an isolated working tree with restored dependencies:
-python scripts/agent_diagnostic_feedback.py --root /path/to/consumer --project Consumer.csproj --backend policysharp --strict
+python scripts/agent_diagnostic_feedback.py --root /path/to/consumer --project Consumer.csproj --backend policysharp --policysharp-cli /path/to/PolicySharp.Cli.dll --strict
 
 # The build backend also works with any C# solution/project:
 python scripts/agent_diagnostic_feedback.py --root path/to/consumer --project Consumer.sln --guard-project src/Governed/Governed.csproj --backend build --strict
