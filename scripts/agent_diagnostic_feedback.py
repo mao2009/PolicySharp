@@ -109,7 +109,8 @@ def run_check(
             command.append("--no-restore")
     elif backend == "policysharp":
         if policysharp_cli:
-            command = [policysharp_cli, "check", "--json", str(target)]
+            command = ([dotnet, policysharp_cli] if policysharp_cli.lower().endswith(".dll")
+                       else [policysharp_cli]) + ["check", "--json", str(target)]
         else:
             cli_project = root / "src" / "PolicySharp.Cli" / "PolicySharp.Cli.csproj"
             if not cli_project.is_file():
