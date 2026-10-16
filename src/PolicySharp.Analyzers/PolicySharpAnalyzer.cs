@@ -152,6 +152,13 @@ public sealed class PolicySharpAnalyzer : DiagnosticAnalyzer
         PolicyDocument policy,
         ConcurrentDictionary<string, byte> scopeFailures)
     {
+        // SDK-emitted framework and assembly metadata must not demand an
+        // application namespace scope. Arbitrary generated code is NOT exempt.
+        if (SdkGeneratedAssemblyAttributeFilter.IsAllowed(context.Operation, context.Compilation))
+        {
+            return;
+        }
+
         var sourceNamespace =
             context.ContainingSymbol?.ContainingNamespace?.ToDisplayString() ??
             string.Empty;
