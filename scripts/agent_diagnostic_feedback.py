@@ -96,7 +96,7 @@ def run_check(
         governed = guard_project or project
         wiring = verify_participation(
             root, governed, "loach.PolicySharp.Analyzers", "policysharp.json",
-            internal_cli=(backend == "policysharp"), dotnet=dotnet, executor=executor,
+            internal_cli=False, dotnet=dotnet, executor=executor,
             timeout=timeout, protected_ids=protected_ids,
         )
         if wiring:
