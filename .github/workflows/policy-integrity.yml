@@ -1,60 +1,52 @@
 name: Policy integrity
 
-# This workflow intentionally runs ONLY trusted base-branch code. It reads
-# candidate PR diff metadata, but NEVER checks out or executes PR scripts.
+# Solo-maintainer path. This is installed and executed from protected main:
+# no PR checkout or PR-provided script runs with pull_request_target.
 on:
   pull_request_target:
     branches: [main]
-    types: [opened, synchronize, reopened, labeled, unlabeled]
+    types: [opened, synchronize, reopened, labeled, unlabeled, ready_for_review]
 
 permissions:
   contents: read
   pull-requests: read
+  issues: read
 
 jobs:
   trust-boundary:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout protected base
+      - name: Checkout trusted base revision
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.base.sha }}
           fetch-depth: 0
           persist-credentials: false
-      - name: Fetch untrusted PR commit as data only
+      - name: Fetch PR changes as untrusted git data
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: |
-          git -c protocol.version=2 fetch --no-tags origin \
-            "+refs/pull/$PR_NUMBER/head:refs/remotes/pr-head"
-      - name: Verify independent approval on latest head
-        id: approval
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          POLICY_APPROVED: ${{ contains(github.event.pull_request.labels.*.name, 'policy-approved') }}
         shell: bash
         run: |
           set -euo pipefail
-          independent=false
-          if [[ "$POLICY_APPROVED" == "true" ]]; then
-            reviews="$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/reviews")"
-            while IFS= read -r reviewer; do
-              [[ -n "$reviewer" ]] || continue
-              permission="$(gh api "repos/$GITHUB_REPOSITORY/collaborators/$reviewer/permission" --jq .permission 2>/dev/null || true)"
-              case "$permission" in
-                write|maintain|admin) independent=true; break ;;
-              esac
-            done < <(printf '%s\n' "$reviews" | jq -r \
-              --arg author "$PR_AUTHOR" --arg head "$PR_HEAD_SHA" \
-              '.[] | select(.state == "APPROVED" and .commit_id == $head and .user.login != $author) | .user.login')
-          fi
-          echo "independent_approved=$independent" >> "$GITHUB_OUTPUT"
-      - name: Check protected file diff using base-side validator
+          git -c protocol.version=2 fetch --no-tags origin \
+            "+refs/pull/$PR_NUMBER/head:refs/remotes/pr-head"
+      - name: Enforce protected-path gate and owner sign-off
         env:
-          POLICY_APPROVED: ${{ contains(github.event.pull_request.labels.*.name, 'policy-approved') }}
-          POLICY_INDEPENDENT_APPROVED: ${{ steps.approval.outputs.independent_approved }}
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          REPO_OWNER: ${{ github.repository_owner }}
+        shell: bash
         run: |
-          bash scripts/check-policy-trust-boundary.sh HEAD refs/remotes/pr-head
+          set -euo pipefail
+          if POLICY_APPROVED=false POLICY_SOLO_APPROVED=false \
+            bash scripts/check-policy-trust-boundary.sh HEAD refs/remotes/pr-head; then
+            echo "No protected files changed: no owner sign-off needed"
+            exit 0
+          fi
+          python3 scripts/solo_maintainer_approval.py \
+            --repo "$GITHUB_REPOSITORY" --pr "$PR_NUMBER" \
+            --head "$PR_HEAD_SHA" --owner "$REPO_OWNER" \
+            --require-label policy-approved
+          POLICY_APPROVED=true POLICY_SOLO_APPROVED=true \
+            bash scripts/check-policy-trust-boundary.sh HEAD refs/remotes/pr-head
