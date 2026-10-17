@@ -1,6 +1,5 @@
 # Policy and analyzer enforcement surfaces.
-# NOTE: @mao2009 cannot independently approve their own PR.
-# Configure "Require review from Code Owners" and a separate maintainer for independence.
+# Solo maintainer: ownership reference only; do not require a second reviewer.
 /.github/workflows/ @mao2009
 /.github/CODEOWNERS @mao2009
 /.policysharp/ @mao2009
