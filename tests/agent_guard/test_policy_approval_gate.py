@@ -37,7 +37,7 @@ class PolicyApprovalGateTests(unittest.TestCase):
     def gate(self, label=False, independent=False):
         env = os.environ.copy()
         env["POLICY_APPROVED"] = str(label).lower()
-        env["POLICY_INDEPENDENT_APPROVED"] = str(independent).lower()
+        env["POLICY_SOLO_APPROVED"] = str(independent).lower()
         return subprocess.run(
             ["bash", str(GATE), self.base, "HEAD"],
             cwd=self.repo, env=env, check=False, text=True, capture_output=True,
