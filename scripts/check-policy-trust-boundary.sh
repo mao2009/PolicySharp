@@ -34,12 +34,12 @@ printf 'Protected PolicySharp files changed:\n' >&2
 printf ' - %s\n' "${violations[@]}" >&2
 
 if [[ "${POLICY_APPROVED:-false}" == "true" &&
-      "${POLICY_INDEPENDENT_APPROVED:-false}" == "true" ]]; then
-  echo "Protected changes approved by an independent, authorized reviewer."
+      "${POLICY_SOLO_APPROVED:-false}" == "true" ]]; then
+  echo "Protected changes approved by the repository owner for this exact head."
   exit 0
 fi
 
 echo "Protected changes require the 'policy-approved' label AND an independent" >&2
-echo "authorized reviewer approval on the current PR head commit." >&2
-echo "Owner self-approval or a label alone must not bypass this boundary." >&2
+echo "repository owner sign-off on the current PR head commit." >&2
+echo "Owner comment matching the current head SHA and a label are both required." >&2
 exit 1
