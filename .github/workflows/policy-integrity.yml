@@ -1,24 +1,52 @@
 name: Policy integrity
 
+# Solo-maintainer path. This is installed and executed from protected main:
+# no PR checkout or PR-provided script runs with pull_request_target.
 on:
-  pull_request:
-    branches: [ main ]
-    types: [opened, synchronize, reopened, labeled, unlabeled]
+  pull_request_target:
+    branches: [main]
+    types: [opened, synchronize, reopened, labeled, unlabeled, ready_for_review]
 
 permissions:
   contents: read
+  pull-requests: read
+  issues: read
 
 jobs:
   trust-boundary:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout trusted base revision
+        uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.pull_request.base.sha }}
           fetch-depth: 0
-
-      - name: Check protected policy files
+          persist-credentials: false
+      - name: Fetch PR changes as untrusted git data
         env:
-          POLICY_APPROVED: ${{ contains(github.event.pull_request.labels.*.name, 'policy-approved') }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        shell: bash
         run: |
-          chmod +x scripts/check-policy-trust-boundary.sh
-          scripts/check-policy-trust-boundary.sh "origin/${{ github.base_ref }}" HEAD
+          set -euo pipefail
+          git -c protocol.version=2 fetch --no-tags origin \
+            "+refs/pull/$PR_NUMBER/head:refs/remotes/pr-head"
+      - name: Enforce protected-path gate and owner sign-off
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          REPO_OWNER: ${{ github.repository_owner }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if POLICY_APPROVED=false POLICY_SOLO_APPROVED=false \
+            bash scripts/check-policy-trust-boundary.sh HEAD refs/remotes/pr-head; then
+            echo "No protected files changed: no owner sign-off needed"
+            exit 0
+          fi
+          python3 scripts/solo_maintainer_approval.py \
+            --repo "$GITHUB_REPOSITORY" --pr "$PR_NUMBER" \
+            --head "$PR_HEAD_SHA" --owner "$REPO_OWNER" \
+            --require-label policy-approved
+          POLICY_APPROVED=true POLICY_SOLO_APPROVED=true \
+            bash scripts/check-policy-trust-boundary.sh HEAD refs/remotes/pr-head

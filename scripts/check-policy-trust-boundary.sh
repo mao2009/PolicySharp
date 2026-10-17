@@ -33,10 +33,13 @@ fi
 printf 'Protected PolicySharp files changed:\n' >&2
 printf ' - %s\n' "${violations[@]}" >&2
 
-if [[ "${POLICY_APPROVED:-false}" == "true" ]]; then
-  echo "Protected changes explicitly approved."
+if [[ "${POLICY_APPROVED:-false}" == "true" &&
+      "${POLICY_SOLO_APPROVED:-false}" == "true" ]]; then
+  echo "Protected changes approved by the repository owner for this exact head."
   exit 0
 fi
 
-echo "Policy approval is required. Apply the 'policy-approved' PR label after human review." >&2
+echo "Protected changes require the 'policy-approved' label AND an independent" >&2
+echo "repository owner sign-off on the current PR head commit." >&2
+echo "Owner comment matching the current head SHA and a label are both required." >&2
 exit 1
